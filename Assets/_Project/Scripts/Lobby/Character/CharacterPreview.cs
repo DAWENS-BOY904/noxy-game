@@ -77,7 +77,7 @@ namespace Noxy.Lobby
 
         private void Update()
         {
-            if (viewRoot == null) return;
+            if (this == null || viewRoot == null) return;
 
             float dt = Time.unscaledDeltaTime;
 

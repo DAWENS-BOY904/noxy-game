@@ -104,7 +104,7 @@ namespace Noxy.Lobby
                             : UIKit.NewRounded(transform, "HUD_" + id, new Color(0.1f, 0.14f, 0.2f, 0.8f), true);
             e.Rect = bg.rectTransform;
             e.Background = bg;
-            e.Group = bg.gameObject.AddComponent<CanvasGroup>();
+            e.Group = EnsureCanvasGroup(bg.gameObject);
 
             if (id == HudElementId.Fire) bg.color = new Color(0.9f, 0.4f, 0.1f, 0.85f);
             if (id == HudElementId.Look) bg.color = EditMode ? new Color(0.2f, 0.7f, 1f, 0.12f) : new Color(0f, 0f, 0f, 0f);
@@ -152,10 +152,24 @@ namespace Noxy.Lobby
                 e.Rect.anchoredPosition = Vector2.zero;
 
                 float alpha = kv.Key == HudElementId.Look || kv.Key == HudElementId.Minimap ? 1f : s.opacity;
-                if (e.Group == null) e.Group = e.Rect.gameObject.AddComponent<CanvasGroup>();
-                e.Group.alpha = alpha;
+                var group = EnsureCanvasGroup(e.Rect.gameObject);
+                if (group == null)
+                {
+                    Debug.LogError("[Noxy] HUD control has no GameObject for its CanvasGroup: " + kv.Key, this);
+                    continue;
+                }
+                e.Group = group;
+                group.alpha = alpha;
                 e.Outline.gameObject.SetActive(EditMode && SelectedId == kv.Key);
             }
+        }
+
+        private static CanvasGroup EnsureCanvasGroup(GameObject target)
+        {
+            if (target == null) return null;
+            var group = target.GetComponent<CanvasGroup>();
+            if (group == null) group = target.AddComponent<CanvasGroup>();
+            return group;
         }
 
         public void SetLayout(HudLayout layout) => SetLayout(layout, safeSize);

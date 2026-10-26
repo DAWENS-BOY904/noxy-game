@@ -42,7 +42,8 @@ namespace Noxy.Lobby
 
         private void Update()
         {
-            if (controller != null) controller.Tick(Time.unscaledDeltaTime);
+            if (this == null || controller == null) return;
+            controller.Tick(Time.unscaledDeltaTime);
         }
 
         public void Play()
@@ -120,12 +121,12 @@ namespace Noxy.Lobby
                 case MatchmakingState.Failed:
                     loadingScene = false;
                     if (overlay != null) overlay.Present(status);
-                    AppServices.Notifications.Post("Matchmaking failed", status.Message, NotificationSeverity.Error, false);
+                    AppServices.Notifications?.Post("Matchmaking failed", status.Message, NotificationSeverity.Error, false);
                     break;
 
                 case MatchmakingState.Cancelled:
                     if (overlay != null) overlay.Hide();
-                    AppServices.Notifications.Post("Matchmaking cancelled", "You left the queue.", NotificationSeverity.Info);
+                    AppServices.Notifications?.Post("Matchmaking cancelled", "You left the queue.", NotificationSeverity.Info);
                     break;
 
                 default:
