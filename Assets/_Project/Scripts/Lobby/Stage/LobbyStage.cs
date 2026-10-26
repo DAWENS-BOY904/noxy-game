@@ -182,48 +182,47 @@ namespace Noxy.Lobby
         }
 
         private void BuildOutpost()
+        {
+            var shell = MaterialFactory.Lit(new Color(0.035f, 0.065f, 0.105f), 0.45f, 0.7f);
+            var trim = MaterialFactory.Lit(new Color(0.09f, 0.16f, 0.2f), 0.55f, 0.6f);
+            var window = MaterialFactory.Unlit(new Color(0.14f, 0.62f, 0.68f));
+            var amber = MaterialFactory.Unlit(new Color(1f, 0.48f, 0.12f));
+            var rng = new System.Random(9041);
+
+            for (int side = -1; side <= 1; side += 2)
             {
-                var shell = MaterialFactory.Lit(new Color(0.035f, 0.065f, 0.105f), 0.45f, 0.7f);
-                var trim = MaterialFactory.Lit(new Color(0.09f, 0.16f, 0.2f), 0.55f, 0.6f);
-                var window = MaterialFactory.Unlit(new Color(0.14f, 0.62f, 0.68f));
-                var amber = MaterialFactory.Unlit(new Color(1f, 0.48f, 0.12f));
-                var rng = new System.Random(9041);
-
-                for (int side = -1; side <= 1; side += 2)
+                for (int i = 0; i < 3; i++)
                 {
-                    for (int i = 0; i < 3; i++)
+                    float x = side * (5.4f + i * 2.1f);
+                    float height = 3.4f + (float)rng.NextDouble() * (i == 0 ? 2.7f : 3.8f);
+                    float z = -9.5f - i * 2.1f;
+                    var building = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostBlock", transform,
+                        new Vector3(x, height * 0.5f - 0.2f, z), new Vector3(2.5f, height, 2.1f), i == 0 ? trim : shell);
+                    NoShadow(building);
+
+                    var roof = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostRoof", transform,
+                        new Vector3(x, height + 0.02f, z), new Vector3(2.7f, 0.14f, 2.3f), trim);
+                    NoShadow(roof);
+
+                    for (int row = 0; row < 2; row++)
                     {
-                        float x = side * (5.4f + i * 2.1f);
-                        float height = 3.4f + (float)rng.NextDouble() * (i == 0 ? 2.7f : 3.8f);
-                        float z = -9.5f - i * 2.1f;
-                        var building = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostBlock", transform,
-                            new Vector3(x, height * 0.5f - 0.2f, z), new Vector3(2.5f, height, 2.1f), i == 0 ? trim : shell);
-                        NoShadow(building);
-
-                        var roof = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostRoof", transform,
-                            new Vector3(x, height + 0.02f, z), new Vector3(2.7f, 0.14f, 2.3f), trim);
-                        NoShadow(roof);
-
-                        for (int row = 0; row < 2; row++)
+                        for (int col = -1; col <= 1; col += 2)
                         {
-                            for (int col = -1; col <= 1; col += 2)
-                            {
-                                var lit = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostWindow", transform,
-                                    new Vector3(x + col * 0.58f, 0.85f + row * 1.05f, z + 1.06f),
-                                    new Vector3(0.34f, 0.46f, 0.035f), (row + col + i) % 4 == 0 ? amber : window);
-                                NoShadow(lit);
-                            }
+                            var lit = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostWindow", transform,
+                                new Vector3(x + col * 0.58f, 0.85f + row * 1.05f, z + 1.06f),
+                                new Vector3(0.34f, 0.46f, 0.035f), (row + col + i) % 4 == 0 ? amber : window);
+                            NoShadow(lit);
                         }
+                    }
 
-                        if (i == 0)
-                        {
-                            var antenna = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostAntenna", transform,
-                                new Vector3(x, height + 0.62f, z), new Vector3(0.045f, 1.1f, 0.045f), trim);
-                            NoShadow(antenna);
-                            var beacon = MaterialFactory.Primitive(PrimitiveType.Sphere, "OutpostBeacon", transform,
-                                new Vector3(x, height + 1.18f, z), Vector3.one * 0.16f, amber);
-                            NoShadow(beacon);
-                        }
+                    if (i == 0)
+                    {
+                        var antenna = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostAntenna", transform,
+                            new Vector3(x, height + 0.62f, z), new Vector3(0.045f, 1.1f, 0.045f), trim);
+                        NoShadow(antenna);
+                        var beacon = MaterialFactory.Primitive(PrimitiveType.Sphere, "OutpostBeacon", transform,
+                            new Vector3(x, height + 1.18f, z), Vector3.one * 0.16f, amber);
+                        NoShadow(beacon);
                     }
                 }
             }
