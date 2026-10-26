@@ -55,7 +55,12 @@ namespace Noxy.Lobby
             public Image Outline;
             public Text Label;
             public RectTransform Knob;
-            public CanvasGroup Group;
+            public Image KnobImage;
+            public float Opacity = 1f;
+            public float BackgroundAlpha = 1f;
+            public float OutlineAlpha = 1f;
+            public float LabelAlpha = 1f;
+            public float KnobAlpha;
         }
 
         private readonly Dictionary<HudElementId, Entry> entries = new Dictionary<HudElementId, Entry>();
@@ -104,7 +109,6 @@ namespace Noxy.Lobby
                             : UIKit.NewRounded(transform, "HUD_" + id, new Color(0.1f, 0.14f, 0.2f, 0.8f), true);
             e.Rect = bg.rectTransform;
             e.Background = bg;
-            e.Group = EnsureCanvasGroup(bg.gameObject);
 
             if (id == HudElementId.Fire) bg.color = new Color(0.9f, 0.4f, 0.1f, 0.85f);
             if (id == HudElementId.Look) bg.color = EditMode ? new Color(0.2f, 0.7f, 1f, 0.12f) : new Color(0f, 0f, 0f, 0f);
@@ -121,12 +125,17 @@ namespace Noxy.Lobby
             if (id == HudElementId.Minimap && !EditMode) label = "";
             e.Label = UIKit.NewText(e.Rect, label, id == HudElementId.MoveStick ? 26 : 24, UITheme.Text, TextAnchor.MiddleCenter, FontStyle.Bold, "Label");
             UIKit.FitText(e.Label, 14);
+            e.BackgroundAlpha = bg.color.a;
+            e.OutlineAlpha = outline.color.a;
+            e.LabelAlpha = e.Label.color.a;
 
             if (id == HudElementId.MoveStick)
             {
                 var knob = UIKit.NewImage(e.Rect, "Knob", new Color(1f, 1f, 1f, 0.35f), UISprites.Circle);
                 knob.rectTransform.sizeDelta = new Vector2(100f, 100f);
                 e.Knob = knob.rectTransform;
+                e.KnobImage = knob;
+                e.KnobAlpha = knob.color.a;
             }
 
             var handle = bg.gameObject.AddComponent<HudHandle>();
@@ -152,24 +161,26 @@ namespace Noxy.Lobby
                 e.Rect.anchoredPosition = Vector2.zero;
 
                 float alpha = kv.Key == HudElementId.Look || kv.Key == HudElementId.Minimap ? 1f : s.opacity;
-                var group = EnsureCanvasGroup(e.Rect.gameObject);
-                if (group == null)
-                {
-                    Debug.LogError("[Noxy] HUD control has no GameObject for its CanvasGroup: " + kv.Key, this);
-                    continue;
-                }
-                e.Group = group;
-                group.alpha = alpha;
+                ApplyOpacity(e, alpha);
                 e.Outline.gameObject.SetActive(EditMode && SelectedId == kv.Key);
             }
         }
 
-        private static CanvasGroup EnsureCanvasGroup(GameObject target)
+        private static void ApplyOpacity(Entry entry, float opacity)
         {
-            if (target == null) return null;
-            var group = target.GetComponent<CanvasGroup>();
-            if (group == null) group = target.AddComponent<CanvasGroup>();
-            return group;
+            entry.Opacity = Mathf.Clamp01(opacity);
+            SetAlpha(entry.Background, entry.BackgroundAlpha * entry.Opacity);
+            SetAlpha(entry.Outline, entry.OutlineAlpha * entry.Opacity);
+            SetAlpha(entry.Label, entry.LabelAlpha * entry.Opacity);
+            SetAlpha(entry.KnobImage, entry.KnobAlpha * entry.Opacity);
+        }
+
+        private static void SetAlpha(Graphic graphic, float alpha)
+        {
+            if (graphic == null) return;
+            Color color = graphic.color;
+            color.a = alpha;
+            graphic.color = color;
         }
 
         public void SetLayout(HudLayout layout) => SetLayout(layout, safeSize);
@@ -233,7 +244,9 @@ namespace Noxy.Lobby
         public void SetHighlight(HudElementId id, bool on)
         {
             if (!entries.TryGetValue(id, out var e) || id == HudElementId.Fire) return;
-            e.Background.color = on ? new Color(0.9f, 0.45f, 0.1f, 0.9f) : new Color(0.1f, 0.14f, 0.2f, 0.8f);
+            Color color = on ? new Color(0.9f, 0.45f, 0.1f) : new Color(0.1f, 0.14f, 0.2f);
+            color.a = (on ? 0.9f : 0.8f) * e.Opacity;
+            e.Background.color = color;
         }
 
         public void SetLabel(HudElementId id, string text)

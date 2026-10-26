@@ -498,7 +498,7 @@ namespace Noxy.Lobby
                 toastGroup.alpha = Mathf.MoveTowards(toastGroup.alpha, visible ? 1f : 0f, Time.unscaledDeltaTime * 5f);
             }
 
-            if (Ctx == null || Ctx.Screens == null || Ctx.Matchmaking == null || Ctx.Dialog == null) return;
+            if (Ctx == null || Ctx.Screens == null || Ctx.Matchmaking == null || Ctx.Dialog == null || AppServices.Modes == null) return;
             if (Ctx.Screens.Current != LobbyScreenId.Lobby || Ctx.Matchmaking.IsOverlayVisible || Ctx.Dialog.IsVisible) return;
 
             var modes = AppServices.Modes.Modes;
