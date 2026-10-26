@@ -12,9 +12,11 @@ No Supabase code, config or migrations existed before this work. Nothing was reu
 supabase link --project-ref <ref>
 supabase db push
 ```
-Applies `supabase/migrations/20250101000000_players.sql`: `players` table (unique 10-digit `player_id`, unique username),
+Applies the files in `supabase/migrations/` in timestamp order: `players` table (unique 10-digit `player_id`, unique username),
 RLS (users read own row, update only `username`/`avatar_url`), an `auth.users` trigger that creates the profile exactly
-once, `ensure_player()`, rate-limited `find_player()`, and `grant_progress()` for `service_role` only.
+once, `ensure_player()`, rate-limited `find_player()`, and `grant_progress()` for `service_role` only. New email
+registrations can request a 3-20 character username; the database validates it and falls back to a generated
+`Operator_...` name if the requested name is invalid or already taken.
 
 ## 2. Client config
 Copy `Assets/_Project/Resources/SupabaseConfig.example.json` to `SupabaseConfig.json` and fill in the project URL and the

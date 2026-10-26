@@ -281,8 +281,16 @@ namespace Noxy.Core
         }
 
         public void SignUpEmail(string email, string password, Action<AuthResult> done) =>
-            Call("POST", "/auth/v1/signup", new Dictionary<string, object> { ["email"] = email, ["password"] = password }, null,
+            SignUpEmail(email, password, null, done);
+
+        public void SignUpEmail(string email, string password, string username, Action<AuthResult> done)
+        {
+            var body = new Dictionary<string, object> { ["email"] = email, ["password"] = password };
+            if (!string.IsNullOrEmpty(username))
+                body["data"] = new Dictionary<string, object> { ["username"] = username };
+            Call("POST", "/auth/v1/signup", body, null,
                 r => done(ParseSessionResponse(r, true)));
+        }
 
         public void SignInEmail(string email, string password, Action<AuthResult> done) =>
             Call("POST", "/auth/v1/token?grant_type=password", new Dictionary<string, object> { ["email"] = email, ["password"] = password }, null,
@@ -530,11 +538,22 @@ namespace Noxy.Core
 
         public void SignUpEmail(string email, string password)
         {
+            SignUpEmail(email, password, null);
+        }
+
+        public void SignUpEmail(string email, string password, string username)
+        {
             if (Blocked()) return;
             var err = ValidateEmailPassword(email, password, true);
             if (err != null) { Fail(err); return; }
+            username = (username ?? "").Trim();
+            if (username.Length > 0 && !IsValidUsername(username))
+            {
+                Fail(AuthResult.Fail(AuthErrorKind.InvalidCredentials, "Username must be 3-20 letters, numbers or underscores."));
+                return;
+            }
             Begin();
-            client.SignUpEmail(email.Trim(), password, r =>
+            client.SignUpEmail(email.Trim(), password, username, r =>
             {
                 if (r.Ok && r.NeedsEmailConfirmation)
                 {
@@ -544,6 +563,15 @@ namespace Noxy.Core
                 }
                 HandleSession(r);
             });
+        }
+
+        private static bool IsValidUsername(string username)
+        {
+            if (username.Length < 3 || username.Length > 20) return false;
+            foreach (char c in username)
+                if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'))
+                    return false;
+            return true;
         }
 
         public static AuthResult ValidateEmailPassword(string email, string password, bool signUp)

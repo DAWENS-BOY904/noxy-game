@@ -7,6 +7,7 @@ import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 
 const migration = readFileSync(new URL('../../supabase/migrations/20250101000000_players.sql', import.meta.url), 'utf8');
+const usernameMigration = readFileSync(new URL('../../supabase/migrations/20250501000000_signup_username.sql', import.meta.url), 'utf8');
 const A = '11111111-1111-1111-1111-111111111111';
 const B = '22222222-2222-2222-2222-222222222222';
 let db;
@@ -19,14 +20,17 @@ async function asAnon(fn) {
   await db.exec(`set role anon; select set_config('request.jwt.claim.sub', '', false);`);
   try { return await fn(); } finally { await db.exec('reset role;'); }
 }
-const addUser = (id) => db.query('insert into auth.users (id) values ($1)', [id]);
+const addUser = (id, username = null) => db.query(
+  'insert into auth.users (id, raw_user_meta_data) values ($1, $2::jsonb)',
+  [id, JSON.stringify(username ? { username } : {})],
+);
 
 before(async () => {
   db = new PGlite();
   await db.exec(`
     create role anon nologin; create role authenticated nologin; create role service_role nologin;
     create schema auth;
-    create table auth.users (id uuid primary key);
+    create table auth.users (id uuid primary key, raw_user_meta_data jsonb not null default '{}'::jsonb);
     create function auth.uid() returns uuid language sql stable
       as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to anon, authenticated, service_role;
@@ -34,6 +38,7 @@ before(async () => {
     grant usage on schema public to anon, authenticated, service_role;
   `);
   await db.exec(migration);
+  await db.exec(usernameMigration);
   await addUser(A);
   await addUser(B);
 });
@@ -44,6 +49,23 @@ test('new account gets exactly one profile with a 10-digit id', async () => {
   assert.match(r.rows[0].player_id, /^[1-9][0-9]{9}$/);
   assert.equal(r.rows[0].level, 1);
   assert.equal(Number(r.rows[0].xp), 0);
+});
+
+test('sign-up metadata sets a valid requested username', async () => {
+  const id = '33333333-3333-3333-3333-333333333333';
+  await addUser(id, 'Noxy_Ranger');
+  const r = await db.query('select username from public.players where user_id = $1', [id]);
+  assert.equal(r.rows[0].username, 'Noxy_Ranger');
+});
+
+test('invalid or taken sign-up names safely fall back to a generated username', async () => {
+  const invalidId = '44444444-4444-4444-4444-444444444444';
+  const duplicateId = '55555555-5555-5555-5555-555555555555';
+  await addUser(invalidId, 'not a valid name');
+  await addUser(duplicateId, 'Noxy_Ranger');
+  const r = await db.query('select username from public.players where user_id = any($1::uuid[])', [[invalidId, duplicateId]]);
+  assert.equal(r.rows.length, 2);
+  assert.ok(r.rows.every(row => /^Operator_[1-9][0-9]{9}$/.test(row.username)));
 });
 
 test('ensure_player is idempotent and keeps the same id', async () => {

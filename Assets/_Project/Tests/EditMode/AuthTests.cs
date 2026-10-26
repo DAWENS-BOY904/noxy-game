@@ -31,6 +31,7 @@ namespace Noxy.Tests
         public readonly Dictionary<string, (string user, string challenge)> Codes = new Dictionary<string, (string, string)>();
         public readonly Dictionary<string, string> OAuthUsers = new Dictionary<string, string>(); // provider subject -> user id
         public int EnsureCalls;
+        public string LastSignUpUsername = "";
         private int counter;
         private readonly Random rng = new Random(7);
 
@@ -58,6 +59,7 @@ namespace Noxy.Tests
                 if (email.Length == 0) return Ok(SessionFor(NewUser(null, null, true)));
                 foreach (var u in Users.Values) if (u.Email == email) return Err(422, "user_already_exists", "User already registered");
                 if (MiniJson.Str(b, "password").Length < 8) return Err(422, "weak_password", "weak");
+                if (b.TryGetValue("data", out var data)) LastSignUpUsername = MiniJson.Str(MiniJson.AsObject(data), "username");
                 return Ok(SessionFor(NewUser(email, MiniJson.Str(b, "password"), false)));
             }
             if (path.StartsWith("/auth/v1/token?grant_type=password"))
@@ -239,6 +241,25 @@ namespace Noxy.Tests
             Assert.AreEqual(10, svc.Player.PlayerId.Length);
             StringAssert.IsMatch("^[1-9][0-9]{9}$", svc.Player.PlayerId);
             Assert.AreEqual(fake.Users.Count, fake.PlayerIds.Count);
+        }
+
+        [Test]
+        public void EmailSignUp_SendsTheRequestedUsernameAsAuthMetadata()
+        {
+            var svc = NewService();
+            svc.SignUpEmail("new@example.com", "password123", "Noxy_Ranger");
+            Assert.AreEqual(AuthState.SignedIn, svc.State, svc.LastError);
+            Assert.AreEqual("Noxy_Ranger", fake.LastSignUpUsername);
+        }
+
+        [Test]
+        public void EmailSignUp_RejectsInvalidRequestedUsername()
+        {
+            var svc = NewService();
+            svc.SignUpEmail("new@example.com", "password123", "invalid name");
+            Assert.AreEqual(AuthState.SignedOut, svc.State);
+            Assert.AreEqual(0, fake.Users.Count);
+            StringAssert.Contains("3-20", svc.LastError);
         }
 
         [Test]

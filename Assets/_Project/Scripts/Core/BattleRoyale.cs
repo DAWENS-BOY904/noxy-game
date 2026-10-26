@@ -141,7 +141,7 @@ namespace Noxy.Core
     public sealed class OfflineBattleRoyaleService : IBattleRoyaleService
     {
         public bool IsAvailable => false;
-        public string UnavailableReason => CommunityText.OfflineReason;
+        public string UnavailableReason => "Battle Royale matchmaking requires a signed-in account. Sign in from Settings > Account, then retry.";
         private void Fail<T>(Action<ApiResult<T>> d) where T : class => d?.Invoke(new ApiResult<T> { Ok = false, Code = "offline", Message = UnavailableReason });
         public void LoadConfig(Action<ApiResult<BrConfigDto>> d) => Fail(d);
         public void LoadMapInfo(Action<ApiResult<BrMapInfoDto>> d) => Fail(d);

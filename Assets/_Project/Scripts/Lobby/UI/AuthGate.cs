@@ -16,9 +16,9 @@ namespace Noxy.Lobby
         private LobbyBackground background;
         private string returnKey = BackgroundLibrary.Lobby;
         private RectTransform content;
-        private InputField email, password;
+        private InputField username, email, password;
         private Text spinner;
-        private string draftEmail = "";
+        private string draftUsername = "", draftEmail = "";
 
         public static AuthGate Create(Transform canvasRoot, LobbyBackground background)
         {
@@ -83,16 +83,18 @@ namespace Noxy.Lobby
             }
 
             // Avoid rebuilding while the player is typing.
-            if (email != null && email.isFocused) draftEmail = email.text;
+            if (username != null) draftUsername = username.text;
+            if (email != null) draftEmail = email.text;
             Rebuild();
         }
 
         private void Rebuild()
         {
             var auth = AppServices.Auth;
+            if (username != null) draftUsername = username.text;
             if (email != null) draftEmail = email.text;
             UIKit.DestroyChildren(content);
-            spinner = null; email = null; password = null;
+            spinner = null; username = null; email = null; password = null;
 
             switch (auth.State)
             {
@@ -158,6 +160,9 @@ namespace Noxy.Lobby
 
             Line("- or use e-mail -", 20, UITheme.TextDim, FontStyle.Normal, 40f);
 
+            username = UIForm.NewInput(content, "Username", "Username for new accounts (3-20 letters, numbers, _)", InputField.ContentType.Standard, 20);
+            UIKit.SetLayout(username.gameObject, preferredHeight: 68f, flexibleWidth: 1f);
+            username.text = draftUsername;
             email = UIForm.NewInput(content, "Email", "E-mail", InputField.ContentType.EmailAddress, 120);
             UIKit.SetLayout(email.gameObject, preferredHeight: 68f, flexibleWidth: 1f);
             email.text = draftEmail;
@@ -169,8 +174,9 @@ namespace Noxy.Lobby
             UIKit.SetLayout(row.gameObject, preferredHeight: 72f);
             var signIn = UIKit.NewButton(row, "SignIn", "SIGN IN", UITheme.Accent, () => AppServices.Auth.SignInEmail(email.text, password.text), UITheme.FontBody);
             UIKit.SetLayout(signIn.gameObject, minWidth: 0f, flexibleWidth: 1f);
-            var register = UIKit.NewButton(row, "Register", "CREATE ACCOUNT", UITheme.Button, () => AppServices.Auth.SignUpEmail(email.text, password.text), UITheme.FontBody);
+            var register = UIKit.NewButton(row, "Register", "CREATE ACCOUNT", UITheme.Button, () => AppServices.Auth.SignUpEmail(email.text, password.text, username.text), UITheme.FontBody);
             UIKit.SetLayout(register.gameObject, minWidth: 0f, flexibleWidth: 1f);
+            Line("The username is used only when creating a new account. Existing players can sign in with e-mail and password.", 18, UITheme.TextDim, FontStyle.Normal, 54f);
 
             Line("- or -", 20, UITheme.TextDim, FontStyle.Normal, 40f);
             Btn("CONTINUE AS GUEST", UITheme.Button, () => AppServices.Auth.SignInGuest(), 68f);
