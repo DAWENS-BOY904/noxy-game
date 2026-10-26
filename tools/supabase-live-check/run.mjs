@@ -15,8 +15,8 @@
 import crypto from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 
-const URL_ = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
-const ANON = process.env.SUPABASE_ANON_KEY || '';
+const URL_ = (process.env.SUPABASE_URL || 'https://llilhpvjgcgjloncplxl.supabase.co').replace(/\/+$/, '');
+const ANON = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsaWxocHZqZ2NnamxvbmNwbHhsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMwMjA1MzAsImV4cCI6MjEwODU5NjUzMH0.gIS-9G4VUKQnfE4aBOt8_zgpcfSXu4LaiZGgwKslKLM';
 const NODE_URL = (process.env.NOXY_SERVER_URL || '').replace(/\/+$/, '');
 const SERVER_KEY = process.env.NOXY_MATCH_SERVER_KEY || '';
 const DOMAIN = process.env.LIVECHECK_EMAIL_DOMAIN || 'example.com';
