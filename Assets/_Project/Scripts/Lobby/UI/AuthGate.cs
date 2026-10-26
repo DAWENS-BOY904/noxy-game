@@ -176,7 +176,7 @@ namespace Noxy.Lobby
             UIKit.SetLayout(signIn.gameObject, minWidth: 0f, flexibleWidth: 1f);
             var register = UIKit.NewButton(row, "Register", "CREATE ACCOUNT", UITheme.Button, () => AppServices.Auth.SignUpEmail(email.text, password.text, username.text), UITheme.FontBody);
             UIKit.SetLayout(register.gameObject, minWidth: 0f, flexibleWidth: 1f);
-            Line("The username is used only when creating a new account. Existing players can sign in with e-mail and password.", 18, UITheme.TextDim, FontStyle.Normal, 54f);
+            Line("This name is used for new e-mail accounts. Google/Apple accounts receive a generated name that can be changed in Profile.", 18, UITheme.TextDim, FontStyle.Normal, 54f);
 
             Line("- or -", 20, UITheme.TextDim, FontStyle.Normal, 40f);
             Btn("CONTINUE AS GUEST", UITheme.Button, () => AppServices.Auth.SignInGuest(), 68f);

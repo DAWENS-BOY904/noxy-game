@@ -78,6 +78,9 @@ namespace Noxy.Lobby
             Community = communityService;
             var brService = new RemoteBattleRoyaleService(api);
             Account.BattleRoyale = brService;
+            brService.UnavailableDetail = () => Auth.State == AuthState.SignedIn
+                ? Account.UnavailableReason
+                : "Battle Royale matchmaking requires a signed-in account. Sign in from Settings > Account, then retry.";
             BattleRoyale = brService;
 
             var supabase = SupabaseConfigLoader.Load();

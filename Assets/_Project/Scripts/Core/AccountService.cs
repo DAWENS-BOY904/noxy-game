@@ -96,7 +96,7 @@ namespace Noxy.Core
                     return State == AccountState.Working
                         ? "Connecting to the game server..."
                         : "Your account is verified, but the game server is unavailable: " + (string.IsNullOrEmpty(LastError) ? "not reachable." : LastError);
-                return CommunityText.OfflineReason;
+                return "Sign in from Settings > Account to use online features.";
             }
         }
 

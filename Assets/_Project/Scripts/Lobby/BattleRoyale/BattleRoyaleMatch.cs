@@ -137,7 +137,7 @@ namespace Noxy.Lobby
             // 1. connect: config, map identity, and the match this player was placed in
             if (!svc.IsAvailable)
             {
-                Debug.LogWarning("[Noxy BR] state=authentication_unavailable", this);
+                Debug.LogWarning("[Noxy BR] state=authentication_unavailable message=\"" + svc.UnavailableReason + "\"", this);
                 Fail(svc.UnavailableReason);
                 yield break;
             }
