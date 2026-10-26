@@ -223,6 +223,7 @@ namespace Noxy.Lobby
         public void SetKey(string newKey, bool instant = false)
         {
             if (newKey == key) return;
+            string previousKey = key;
             key = newKey;
 
             if (newKey == BackgroundLibrary.Lobby)
@@ -246,7 +247,7 @@ namespace Noxy.Lobby
                 return;
             }
 
-            if (key == BackgroundLibrary.Lobby && front.sprite == null)
+            if (previousKey == BackgroundLibrary.Lobby || front.sprite == null)
             {
                 Apply(front, sprite);
                 front.color = new Color(1f, 1f, 1f, 0f);
