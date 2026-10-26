@@ -79,6 +79,7 @@ namespace Noxy.Lobby
             screens.Register(LobbyScreen.Create<SettingsScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<HudEditorScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<NotificationsScreen>(ctx, safeRoot));
+        screens.Register(LobbyScreen.Create<MatchResultsScreen>(ctx, safeRoot));
             screens.ShowInitial();
             screens.Changed += (from, to) => background.SetKey(to == LobbyScreenId.Lobby || to == LobbyScreenId.Vault || to == LobbyScreenId.Profile
                 ? BackgroundLibrary.Lobby : BackgroundLibrary.Menu);

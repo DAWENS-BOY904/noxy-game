@@ -130,39 +130,20 @@ namespace Noxy.Lobby
         }
     }
 
-    public sealed class MissionsScreen : InfoListScreen
-    {
-        public override LobbyScreenId Id => LobbyScreenId.Missions;
-        public override string Title => "Missions";
-        protected override string Banner => "Sample missions (local mock). Progress is static until a mission backend exists.";
-
-        protected override IEnumerable<RowData> GetRows()
-        {
-            yield return Mission("Eliminate 10 opponents", "Daily", 6, 10);
-            yield return Mission("Play 3 matches", "Daily", 1, 3);
-            yield return Mission("Land 5 headshots", "Daily", 5, 5);
-            yield return Mission("Win a match", "Weekly", 0, 1);
-            yield return Mission("Survive 20 minutes in total", "Weekly", 12, 20);
-        }
-
-        private static RowData Mission(string name, string kind, int done, int goal)
-        {
-            return new RowData
-            {
-                Title = name,
-                Subtitle = kind + " - " + done + " / " + goal,
-                Progress = (float)done / goal,
-                RightText = done >= goal ? "DONE" : "",
-                RightColor = UITheme.Success
-            };
-        }
-    }
-
     public sealed class RewardsScreen : InfoListScreen
     {
         public override LobbyScreenId Id => LobbyScreenId.Rewards;
         public override string Title => "Rewards";
-        protected override string Banner => "Local mock rewards, offline profile only (stored on this device, no server validation). While signed in the server owns your currency, so claiming is disabled.";
+        protected override string Banner => "The daily login reward is a local mock for the offline profile only. Match rewards below come from the server and are only recorded for matches it confirmed.";
+
+        private MatchRewardsDto recent;
+
+        protected override void OnShown()
+        {
+            base.OnShown();
+            if (!AppServices.Economy.IsAvailable) return;
+            AppServices.Economy.LoadRecentMatches(r => { if (r.Ok) { recent = r.Value; Rebuild(); } });
+        }
 
         protected override IEnumerable<RowData> GetRows()
         {
@@ -170,46 +151,55 @@ namespace Noxy.Lobby
             yield return new RowData
             {
                 Title = "Daily login reward",
-                Subtitle = "+" + RewardRules.DailyRewardCredits + " Credits",
+                Subtitle = "+" + RewardRules.DailyRewardCredits + " coins (offline profile)",
                 ActionLabel = canClaim ? "CLAIM" : "CLAIMED",
                 ActionEnabled = canClaim,
                 Action = Claim
             };
-            yield return new RowData { Title = "Level 15 reward", Subtitle = "Neon Soles preview - not active", RightText = "LV 15", TitleColor = UITheme.TextDim };
-            yield return new RowData { Title = "Level 20 reward", Subtitle = "Aurora Suit preview - not active", RightText = "LV 20", TitleColor = UITheme.TextDim };
+            yield return new RowData
+            {
+                Title = "Preview the Booyah screen",
+                Subtitle = "Sample data only. No match is played and no diamonds are added.",
+                ActionLabel = "PREVIEW",
+                ActionEnabled = true,
+                Action = () => { if (Ctx.Screens.TryGet(LobbyScreenId.MatchResults, out var s) && s is MatchResultsScreen m) m.Present(MatchResultsScreen.SampleBooyah(), true); }
+            };
+
+            if (!AppServices.Economy.IsAvailable)
+            {
+                yield return new RowData { Title = "Match rewards", Subtitle = AppServices.Economy.UnavailableReason, TitleColor = UITheme.TextDim };
+                yield break;
+            }
+
+            if (recent == null || recent.matches.Count == 0)
+            {
+                yield return new RowData { Title = "No rewarded matches yet", Subtitle = "Rewards appear here after the game server reports a finished match.", TitleColor = UITheme.TextDim };
+                yield break;
+            }
+
+            foreach (var m in recent.matches)
+            {
+                var match = m;
+                yield return new RowData
+                {
+                    Title = match.booyah ? "BOOYAH! +" + match.booyahDiamonds + " diamonds" : "Match finished #" + match.placement,
+                    Subtitle = "+" + match.coins + " coins  -  " + match.kills + " eliminations",
+                    TitleColor = match.booyah ? UITheme.Accent : UITheme.Text,
+                    ActionLabel = "VIEW",
+                    ActionEnabled = true,
+                    Action = () => { if (Ctx.Screens.TryGet(LobbyScreenId.MatchResults, out var s) && s is MatchResultsScreen r) r.Present(match, false); }
+                };
+            }
         }
 
         private void Claim()
         {
             var result = AppServices.Profile.ClaimDailyReward();
             if (result.Success)
-                AppServices.Notifications.Post("Reward claimed", "+" + RewardRules.DailyRewardCredits + " Credits added.", NotificationSeverity.Success);
+                AppServices.Notifications.Post("Reward claimed", "+" + RewardRules.DailyRewardCredits + " coins added.", NotificationSeverity.Success);
             else
                 AppServices.Notifications.Post("Can't claim", result.Error, NotificationSeverity.Warning);
             Rebuild();
-        }
-    }
-
-    public sealed class ShopScreen : InfoListScreen
-    {
-        public override LobbyScreenId Id => LobbyScreenId.Shop;
-        public override string Title => "Shop";
-        protected override string Banner => "Store preview only. Purchasing is disabled: there is no store backend or payment service yet.";
-
-        protected override IEnumerable<RowData> GetRows()
-        {
-            foreach (var item in AppServices.Catalog.Items)
-            {
-                if (AppServices.Profile.Owns(item.Id)) continue;
-                yield return new RowData
-                {
-                    Title = item.DisplayName,
-                    Subtitle = item.Rarity + " " + item.Slot.DisplayName() + " - " + item.PriceCredits.ToString("N0") + " Credits",
-                    TitleColor = UITheme.Rarity(item.Rarity),
-                    ActionLabel = "UNAVAILABLE",
-                    ActionEnabled = false
-                };
-            }
         }
     }
 

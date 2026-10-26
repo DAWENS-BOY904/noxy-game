@@ -97,3 +97,6 @@ In Unity: Window > General > Test Runner > EditMode.
 ## Replacing placeholders
 
 See `Assets/_Project/Art/Placeholders/README.md` (character prefab, stage, UI art, fonts, catalog). A real character prefab at `Resources/Characters/LobbyCharacter.prefab` is picked up automatically; give it an Animator with triggers `Emote0..3` and an int `WeaponSlot` to drive emotes and held weapons.
+
+## Economy
+Wallet, missions, Booyah promo reward, diamond store (sandbox) and cosmetic purchases are implemented server-side. Not production-ready, see [docs/ECONOMY_SETUP.md](docs/ECONOMY_SETUP.md).

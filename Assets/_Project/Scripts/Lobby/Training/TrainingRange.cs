@@ -478,6 +478,17 @@ namespace Noxy.Lobby
             else drill.RegisterMiss();
         }
 
+        // Training is offline and unverifiable, so the server pays only a tiny, daily-capped coin reward. Never diamonds.
+        private void ReportDrillToServer(int score)
+        {
+            if (score <= 0 || !AppServices.IsInitialized || !AppServices.Economy.IsAvailable) return;
+            AppServices.Economy.ReportTrainingResult(score, r =>
+            {
+                if (r.Ok && r.Value.coins > 0) ShowMessage("Training reward: +" + r.Value.coins + " coins");
+                else if (r.Ok && r.Value.limitReached) ShowMessage("Daily training reward limit reached");
+            });
+        }
+
         private void UpdateDrill()
         {
             Vector3 p = player.transform.position;
@@ -497,6 +508,7 @@ namespace Noxy.Lobby
                 bool record = drill.Score > best;
                 if (record) { PlayerPrefs.SetInt(BestScoreKey, drill.Score); PlayerPrefs.Save(); }
                 ShowMessage("Drill over: " + drill.Score + " pts, rank " + TrainingDrill.RankFor(drill.Score) + (record ? " (new best)" : ""));
+                ReportDrillToServer(drill.Score);
                 messageTimer = 8f;
             }
 

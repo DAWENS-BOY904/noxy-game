@@ -19,7 +19,9 @@ const DEFAULT_CONFIG = {
   maxPendingSentInvites: 5,
   presenceTimeoutMs: 30 * 1000,
   usernameChangeCooldownMs: 24 * 3600 * 1000,
-  limits: { auth: [20, 60000], search: [20, 60000], invite: [30, 60000], friendRequest: [20, 60000], report: [5, 60000] },
+  limits: { auth: [20, 60000], search: [20, 60000], invite: [30, 60000], friendRequest: [20, 60000], report: [5, 60000], purchase: [20, 60000], claim: [30, 60000], internal: [600, 60000] },
+  // Secrets come from the environment (see index.js); empty means the feature is disabled.
+  economy: { matchServerKey: '', testPayments: false, verifiers: {}, webhookSecrets: {}, adsSecret: '' },
   idGenerator: () => String(crypto.randomInt(1_000_000_000, 10_000_000_000)),
 };
 
@@ -37,7 +39,7 @@ class ApiError extends Error {
 const fail = (status, code, message, extra) => { throw new ApiError(status, code, message, extra); };
 
 function createApp(options = {}) {
-  const config = { ...DEFAULT_CONFIG, ...(options.config || {}), limits: { ...DEFAULT_CONFIG.limits, ...((options.config || {}).limits || {}) } };
+  const config = { ...DEFAULT_CONFIG, ...(options.config || {}), economy: { ...DEFAULT_CONFIG.economy, ...((options.config || {}).economy || {}) }, limits: { ...DEFAULT_CONFIG.limits, ...((options.config || {}).limits || {}) } };
   const now = options.now || (() => Date.now());
   const db = new DatabaseSync(options.dbPath || ':memory:');
   db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
@@ -152,10 +154,11 @@ function createApp(options = {}) {
     return { ...brief(viewerId, p), stats: statsOf(p.id), loadout: loadoutOf(p.id) };
   }
   function meObject(p) {
+    const wallet = economy.walletView(p.id);
     const s = settingsRow(p.id);
     return {
       publicId: p.public_id, username: p.username, level: p.level, xp: p.xp, xpToNext: xpToNext(p.level),
-      credits: p.credits, cores: p.cores, rank: p.rank_name, createdAt: p.created_at,
+      credits: wallet.coins, cores: wallet.diamonds, wallet, rank: p.rank_name, createdAt: p.created_at,
       stats: statsOf(p.id), loadout: loadoutOf(p.id),
       privacy: { friendRequests: s.friend_requests, partyInvites: s.party_invites, onlineStatus: s.online_status },
     };
@@ -303,6 +306,8 @@ function createApp(options = {}) {
     return { elements: out };
   }
 
+  const economy = require('./economy').create({ db, q, tx, fail, now, config, catalog, requireString, rateLimit, playerByPublicId, notify });
+
   // ---------- routes ----------
   const routes = [];
   const route = (method, pattern, handler, opts = {}) => {
@@ -372,7 +377,7 @@ function createApp(options = {}) {
     return { body: { loadout: loadoutOf(me.id) } };
   });
 
-  route('POST', '/api/shop/purchase', () => fail(501, 'not_implemented', 'Purchases are not available yet.'));
+  economy.install(route);
 
   route('GET', '/api/me/settings', ({ me }) => {
     const s = settingsRow(me.id);
@@ -676,7 +681,8 @@ function createApp(options = {}) {
       req.on('end', () => {
         if (size === 0) return resolve({});
         try {
-          const v = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          req.rawBody = Buffer.concat(chunks).toString('utf8');
+          const v = JSON.parse(req.rawBody);
           if (typeof v !== 'object' || v === null || Array.isArray(v)) return reject(new ApiError(400, 'invalid_json', 'Body must be a JSON object.'));
           resolve(v);
         } catch { reject(new ApiError(400, 'invalid_json', 'Body is not valid JSON.')); }
@@ -709,7 +715,7 @@ function createApp(options = {}) {
       const body = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) ? await readBody(req) : {};
       const ctx = { req, ip, body, params, query: url.searchParams };
       if (matched.auth) { ctx.auth = authenticate(req); ctx.me = ctx.auth.player; }
-      const out = matched.handler(ctx);
+      const out = await matched.handler(ctx);
       send(out.status || 200, out.body);
     } catch (e) {
       if (e instanceof ApiError) {
@@ -722,7 +728,7 @@ function createApp(options = {}) {
     }
   }
 
-  return { handle, db, config, close: () => db.close() };
+  return { handle, db, config, economy, close: () => db.close() };
 }
 
 module.exports = { createApp, catalog };

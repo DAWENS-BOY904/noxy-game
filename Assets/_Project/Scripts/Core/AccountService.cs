@@ -76,6 +76,9 @@ namespace Noxy.Core
 
         public event Action Changed;
 
+        /// <summary>Optional wallet/store client; kept in sync with the signed-in state.</summary>
+        public RemoteEconomyService Economy { get; set; }
+
         public string ServerUrl
         {
             get => api.BaseUrl;
@@ -154,6 +157,7 @@ namespace Noxy.Core
                 Username = me.username;
                 profile.ApplyServerSnapshot(AccountMapper.ToProfile(me, inv.Value));
                 social.SignedIn = true;
+                if (Economy != null) { Economy.SignedIn = true; Economy.RefreshWallet(); }
                 lastNotificationId = 0;
                 firstNotificationPull = true;
                 heartbeatTimer = 0f;
@@ -211,6 +215,7 @@ namespace Noxy.Core
             tokens.SaveToken("");
             social.SignedIn = false;
             social.Clear();
+            if (Economy != null) { Economy.SignedIn = false; Economy.Clear(); }
             profile.RevertToLocal();
             PublicId = "";
             Username = "";
@@ -373,6 +378,7 @@ namespace Noxy.Core
                     foreach (var note in n.Value.notifications)
                     {
                         lastNotificationId = Math.Max(lastNotificationId, note.id);
+                        if (note.kind == "reward" && !firstNotificationPull) ResyncInventory(); // server granted currency: refresh balances
                         notifications.Post(note.title, note.body, SeverityFor(note.kind), toast: !firstNotificationPull && config.Settings.notifications);
                     }
                     firstNotificationPull = false;

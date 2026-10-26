@@ -249,7 +249,7 @@ namespace Noxy.Lobby
 
             string online = AppServices.Profile.IsServerBound ? "" : "  (offline profile)";
             if (!owned)
-                info.text = "<color=#FFC742>" + missing + " is locked.</color> You can preview it, but only owned items can be equipped. Purchasing isn't available yet (no store backend)." + online;
+                info.text = "<color=#FFC742>" + missing + " is locked.</color> You can preview it, but only owned items can be equipped. Buy it in the Shop (Cosmetics tab) or, offline, it stays locked." + online;
             else if (changed)
                 info.text = "Previewing changes. Drag the character to inspect, then press EQUIP." + online;
             else

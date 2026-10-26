@@ -407,7 +407,7 @@ test('cosmetics: only owned items can be equipped, slots validated, unequip rule
     // a failed request must not partially apply
     assert.equal((await put({ outfit: 'outfit_recruit', shoes: 'shoes_neon' })).status, 403);
     assert.equal((await s.call('GET', '/api/me', { token: a.token })).body.loadout.outfit, 'outfit_nightops');
-    assert.equal((await s.call('POST', '/api/shop/purchase', { token: a.token, body: { itemId: 'outfit_aurora' } })).status, 501);
+    assert.equal((await s.call('POST', '/api/shop/purchase', { token: a.token, body: { itemId: 'outfit_aurora' } })).status, 400); // currency is now required; see economy.test.js
   } finally { await s.close(); }
 });
 

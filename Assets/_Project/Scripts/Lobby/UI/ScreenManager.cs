@@ -20,7 +20,8 @@ namespace Noxy.Lobby
         Shop,
         Settings,
         HudEditor,
-        Notifications
+        Notifications,
+        MatchResults
     }
 
     /// <summary>Shared references handed to every screen. Avoids singletons inside UI code.</summary>

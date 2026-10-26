@@ -264,16 +264,17 @@ namespace Noxy.Lobby
         {
             currencyGroup = UIKit.NewRect("Currency", parent);
             UIKit.HStack(currencyGroup.gameObject, 8f, 0, TextAnchor.MiddleLeft);
-            creditsText = Chip(currencyGroup, "Credits", new Color(1f, 0.78f, 0.26f));
-            coresText = Chip(currencyGroup, "Cores", UITheme.Cyan);
+            creditsText = Chip(currencyGroup, "Coins", new Color(1f, 0.78f, 0.26f), "C");
+            coresText = Chip(currencyGroup, "Diamonds", UITheme.Cyan, "D");
         }
 
-        private Text Chip(Transform parent, string name, Color dotColor)
+        private Text Chip(Transform parent, string name, Color dotColor, string letter)
         {
             var chip = UIKit.NewButton(parent, name, "0", UITheme.Chip, () => Ctx.Screens.Open(LobbyScreenId.Shop), UITheme.FontBody);
             UIKit.SetLayout(chip.gameObject, preferredWidth: 165f, preferredHeight: 60f);
             var dot = UIKit.NewImage(chip.transform, "Dot", dotColor, UISprites.Circle);
             UIKit.Anchor(dot.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(14f, 0f), new Vector2(28f, 28f));
+            var mark = UIKit.NewText(dot.transform, letter, 18, new Color(0.08f, 0.09f, 0.12f), TextAnchor.MiddleCenter, FontStyle.Bold, "Mark");
             chip.Label.alignment = TextAnchor.MiddleRight;
             UIKit.Stretch(chip.Label.rectTransform, 48f, 0f, 14f, 0f);
             return chip.Label;

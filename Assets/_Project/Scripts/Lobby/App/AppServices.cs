@@ -26,6 +26,8 @@ namespace Noxy.Lobby
         /// <summary>True when the player chose to continue without an account. Never means "signed in".</summary>
         public static bool OfflineMode { get; set; }
         public static ISocialService Social { get; private set; }
+        /// <summary>Wallet, store, missions and rewards. Server-authoritative; unavailable while offline.</summary>
+        public static IEconomyService Economy { get; private set; } = new OfflineEconomyService();
 
         public static bool IsInitialized => Profile != null;
 
@@ -33,7 +35,7 @@ namespace Noxy.Lobby
         private static void ResetStatics()
         {
             Catalog = null; Profile = null; Config = null; Modes = null; Matchmaking = null;
-            OfflineMatchmaking = null; Notifications = null; Account = null; Social = null; Auth = null;
+            OfflineMatchmaking = null; Notifications = null; Account = null; Social = null; Auth = null; Economy = new OfflineEconomyService();
             OfflineMode = false; NativeSignIn = null;
         }
 
@@ -58,6 +60,10 @@ namespace Noxy.Lobby
             var remote = new RemoteSocialService(api);
             Social = remote;
             Account = new AccountService(api, Profile, Config, Notifications, remote, tokens);
+            var economy = new RemoteEconomyService(api);
+            economy.BalanceChanged = () => Account.ResyncInventory();
+            Account.Economy = economy;
+            Economy = economy;
 
             var supabase = SupabaseConfigLoader.Load();
             Auth = new AuthService(new SupabaseAuthClient(new UnityWebRequestTransport(), supabase), new PrefsSessionStore(), supabase);
