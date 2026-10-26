@@ -33,7 +33,7 @@ namespace Noxy.Lobby
 
         private void Update()
         {
-            AppServices.Matchmaking.Tick(Time.unscaledDeltaTime);
+            if (AppServices.Matchmaking != null) AppServices.Matchmaking.Tick(Time.unscaledDeltaTime);
         }
 
         public void Play()

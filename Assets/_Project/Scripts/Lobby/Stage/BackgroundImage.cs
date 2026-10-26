@@ -224,7 +224,18 @@ namespace Noxy.Lobby
         {
             if (newKey == key) return;
             key = newKey;
+
+            if (newKey == BackgroundLibrary.Lobby)
+            {
+                bgCamera.backgroundColor = new Color(0.018f, 0.04f, 0.075f);
+                front.color = new Color(1f, 1f, 1f, 0f);
+                back.color = new Color(1f, 1f, 1f, 0f);
+                fade = 1f;
+                return;
+            }
+
             var sprite = BackgroundLibrary.Get(newKey);
+            bgCamera.backgroundColor = Color.black;
 
             if (instant)
             {
@@ -232,6 +243,15 @@ namespace Noxy.Lobby
                 front.color = Color.white;
                 back.color = new Color(1f, 1f, 1f, 0f);
                 fade = 1f;
+                return;
+            }
+
+            if (key == BackgroundLibrary.Lobby && front.sprite == null)
+            {
+                Apply(front, sprite);
+                front.color = new Color(1f, 1f, 1f, 0f);
+                back.color = new Color(1f, 1f, 1f, 0f);
+                fade = 0f;
                 return;
             }
 

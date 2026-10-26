@@ -3,8 +3,8 @@ using UnityEngine;
 namespace Noxy.Lobby
 {
     /// <summary>
-    /// Procedural lobby foreground: lights, a glowing platform, light beams and floating particles.
-    /// The backdrop is NOT part of the stage: it is an image drawn by LobbyBackground (see BackgroundLibrary).
+    /// Original procedural Noxy lobby environment: staging platform, illuminated gateway, distant outpost,
+    /// atmospheric lighting and subtle floating particles.
     /// </summary>
     public sealed class LobbyStage : MonoBehaviour
     {
@@ -20,6 +20,8 @@ namespace Noxy.Lobby
 
         public static LobbyStage Create()
         {
+            var existing = FindObjectOfType<LobbyStage>();
+            if (existing != null) return existing;
             var go = new GameObject("LobbyStage");
             return go.AddComponent<LobbyStage>();
         }
@@ -28,6 +30,8 @@ namespace Noxy.Lobby
         {
             BuildLighting();
             BuildPlatform();
+            BuildGateway();
+            BuildOutpost();
             BuildBeams();
             BuildShards();
             BuildParticles();
@@ -123,6 +127,104 @@ namespace Noxy.Lobby
                 var beam = MaterialFactory.Primitive(PrimitiveType.Quad, "Beam", transform, new Vector3(side * 2.4f, 4.2f, -4f), new Vector3(1.8f, 10f, 1f), beamMat);
                 beam.transform.rotation = Quaternion.Euler(0f, 180f, side * 14f);
                 NoShadow(beam);
+            }
+
+            private void BuildGateway()
+            {
+                var frame = MaterialFactory.Lit(new Color(0.035f, 0.075f, 0.105f), 0.72f, 0.78f);
+                var trim = MaterialFactory.Unlit(CyanColor);
+                var warm = MaterialFactory.Unlit(AccentColor);
+
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    var pillar = MaterialFactory.Primitive(PrimitiveType.Cube, "GatePillar", transform,
+                        new Vector3(side * 2.65f, 2.45f, -6.2f), new Vector3(0.42f, 4.9f, 0.48f), frame);
+                    NoShadow(pillar);
+                    var strip = MaterialFactory.Primitive(PrimitiveType.Cube, "GateLight", transform,
+                        new Vector3(side * 2.65f, 2.45f, -5.94f), new Vector3(0.055f, 4.35f, 0.025f), trim);
+                    NoShadow(strip);
+                    var footing = MaterialFactory.Primitive(PrimitiveType.Cube, "GateFoot", transform,
+                        new Vector3(side * 2.65f, 0.22f, -5.9f), new Vector3(0.82f, 0.42f, 0.8f), frame);
+                    NoShadow(footing);
+                }
+
+                var lintel = MaterialFactory.Primitive(PrimitiveType.Cube, "GateLintel", transform,
+                    new Vector3(0f, 4.88f, -6.2f), new Vector3(5.7f, 0.38f, 0.48f), frame);
+                NoShadow(lintel);
+                var band = MaterialFactory.Primitive(PrimitiveType.Cube, "GateSignalBand", transform,
+                    new Vector3(0f, 4.64f, -5.94f), new Vector3(3.2f, 0.045f, 0.025f), warm);
+                NoShadow(band);
+
+                var sign = MaterialFactory.Primitive(PrimitiveType.Cube, "NoxyGateMark", transform,
+                    new Vector3(0f, 4.9f, -5.91f), new Vector3(0.26f, 0.26f, 0.035f), trim);
+                sign.transform.localRotation = Quaternion.Euler(0f, 0f, 45f);
+                NoShadow(sign);
+
+                var innerFrame = MaterialFactory.Primitive(PrimitiveType.Cube, "GateInnerHeader", transform,
+                    new Vector3(0f, 3.35f, -6.08f), new Vector3(1.8f, 0.055f, 0.07f), trim);
+                NoShadow(innerFrame);
+
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    var rail = MaterialFactory.Primitive(PrimitiveType.Cube, "PlatformRail", transform,
+                        new Vector3(side * 2.05f, 0.12f, -3.8f), new Vector3(0.06f, 0.12f, 3.2f), trim);
+                    NoShadow(rail);
+                }
+
+                for (int i = 0; i < 5; i++)
+                {
+                    var marker = MaterialFactory.Primitive(PrimitiveType.Cube, "ApproachMarker", transform,
+                        new Vector3(0f, 0.012f, -0.8f - i * 0.62f),
+                        new Vector3(0.34f - i * 0.035f, 0.012f, 0.035f), i % 2 == 0 ? warm : trim);
+                    NoShadow(marker);
+                }
+            }
+
+            private void BuildOutpost()
+            {
+                var shell = MaterialFactory.Lit(new Color(0.035f, 0.065f, 0.105f), 0.45f, 0.7f);
+                var trim = MaterialFactory.Lit(new Color(0.09f, 0.16f, 0.2f), 0.55f, 0.6f);
+                var window = MaterialFactory.Unlit(new Color(0.14f, 0.62f, 0.68f));
+                var amber = MaterialFactory.Unlit(new Color(1f, 0.48f, 0.12f));
+                var rng = new System.Random(9041);
+
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float x = side * (5.4f + i * 2.1f);
+                        float height = 3.4f + (float)rng.NextDouble() * (i == 0 ? 2.7f : 3.8f);
+                        float z = -9.5f - i * 2.1f;
+                        var building = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostBlock", transform,
+                            new Vector3(x, height * 0.5f - 0.2f, z), new Vector3(2.5f, height, 2.1f), i == 0 ? trim : shell);
+                        NoShadow(building);
+
+                        var roof = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostRoof", transform,
+                            new Vector3(x, height + 0.02f, z), new Vector3(2.7f, 0.14f, 2.3f), trim);
+                        NoShadow(roof);
+
+                        for (int row = 0; row < 3; row++)
+                        {
+                            for (int col = -1; col <= 1; col++)
+                            {
+                                var lit = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostWindow", transform,
+                                    new Vector3(x + col * 0.58f, 0.7f + row * 0.72f, z + 1.06f),
+                                    new Vector3(0.27f, 0.34f, 0.035f), (row + col + i) % 4 == 0 ? amber : window);
+                                NoShadow(lit);
+                            }
+                        }
+
+                        if (i == 0)
+                        {
+                            var antenna = MaterialFactory.Primitive(PrimitiveType.Cube, "OutpostAntenna", transform,
+                                new Vector3(x, height + 0.62f, z), new Vector3(0.045f, 1.1f, 0.045f), trim);
+                            NoShadow(antenna);
+                            var beacon = MaterialFactory.Primitive(PrimitiveType.Sphere, "OutpostBeacon", transform,
+                                new Vector3(x, height + 1.18f, z), Vector3.one * 0.16f, amber);
+                            NoShadow(beacon);
+                        }
+                    }
+                }
             }
         }
 

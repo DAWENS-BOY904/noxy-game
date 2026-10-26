@@ -74,6 +74,8 @@ namespace Noxy.Lobby
 
         private void Update()
         {
+            if (view == null || view.Root == null) return;
+
             float dt = Time.unscaledDeltaTime;
 
             float key = InputCompat.RotateAxis;

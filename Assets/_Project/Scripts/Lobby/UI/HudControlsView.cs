@@ -55,6 +55,7 @@ namespace Noxy.Lobby
             public Image Outline;
             public Text Label;
             public RectTransform Knob;
+            public CanvasGroup Group;
         }
 
         private readonly Dictionary<HudElementId, Entry> entries = new Dictionary<HudElementId, Entry>();
@@ -103,6 +104,7 @@ namespace Noxy.Lobby
                             : UIKit.NewRounded(transform, "HUD_" + id, new Color(0.1f, 0.14f, 0.2f, 0.8f), true);
             e.Rect = bg.rectTransform;
             e.Background = bg;
+            e.Group = bg.gameObject.AddComponent<CanvasGroup>();
 
             if (id == HudElementId.Fire) bg.color = new Color(0.9f, 0.4f, 0.1f, 0.85f);
             if (id == HudElementId.Look) bg.color = EditMode ? new Color(0.2f, 0.7f, 1f, 0.12f) : new Color(0f, 0f, 0f, 0f);
@@ -150,8 +152,8 @@ namespace Noxy.Lobby
                 e.Rect.anchoredPosition = Vector2.zero;
 
                 float alpha = kv.Key == HudElementId.Look || kv.Key == HudElementId.Minimap ? 1f : s.opacity;
-                var group = e.Rect.GetComponent<CanvasGroup>() ?? e.Rect.gameObject.AddComponent<CanvasGroup>();
-                group.alpha = alpha;
+                if (e.Group == null) e.Group = e.Rect.gameObject.AddComponent<CanvasGroup>();
+                e.Group.alpha = alpha;
                 e.Outline.gameObject.SetActive(EditMode && SelectedId == kv.Key);
             }
         }
