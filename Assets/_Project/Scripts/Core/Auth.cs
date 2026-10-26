@@ -18,9 +18,37 @@ namespace Noxy.Core
         /// <summary>Deep link registered for Android/iOS and (via loopback) PC, e.g. noxy://auth-callback.</summary>
         public string RedirectUrl = "noxy://auth-callback";
 
-        public bool IsConfigured =>
-            Url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
-            AnonKey.Length > 20 && !AnonKey.Contains("YOUR_");
+        public bool IsConfigured => Problem.Length == 0;
+
+        /// <summary>Exactly what is wrong with the configuration, or empty when it is usable.</summary>
+        public string Problem
+        {
+            get
+            {
+                if (Url.Length == 0 && AnonKey.Length == 0)
+                    return "Resources/SupabaseConfig.json is missing or empty. Copy SupabaseConfig.example.json to SupabaseConfig.json and fill in your project URL and anon key.";
+                if (Url.IndexOf("YOUR-PROJECT-REF", StringComparison.OrdinalIgnoreCase) >= 0 || Url.IndexOf("YOUR_", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return "\"url\" still contains the placeholder. Use your real project URL (https://<ref>.supabase.co).";
+                if (!Url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    return "\"url\" must be your project URL starting with https://.";
+                if (AnonKey.Length == 0 || AnonKey.IndexOf("YOUR", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return "\"anonKey\" is missing or still the placeholder. Use the anon/publishable key from Project Settings > API.";
+                if (IsPrivilegedKey(AnonKey))
+                    return "\"anonKey\" is a SERVICE-ROLE / secret key. Remove it from the game and rotate it in the Supabase dashboard now; only the anon/publishable key may ship in a client.";
+                if (AnonKey.Length <= 20)
+                    return "\"anonKey\" is too short to be a real key.";
+                return "";
+            }
+        }
+
+        /// <summary>True for a service_role JWT or a new-style secret key. These must never be in a game client.</summary>
+        public static bool IsPrivilegedKey(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+            if (key.StartsWith("sb_secret_", StringComparison.OrdinalIgnoreCase)) return true;
+            var claims = Jwt.Payload(key);
+            return claims != null && MiniJson.Str(claims, "role") == "service_role";
+        }
 
         public string Base => Url.TrimEnd('/');
 
@@ -431,6 +459,8 @@ namespace Noxy.Core
         public PlayerRecord Player { get; private set; }
         public string LastError { get; private set; } = "";
         public AuthErrorKind LastErrorKind { get; private set; }
+        /// <summary>When State is NotConfigured, the specific reason (missing file, placeholder, wrong key type...).</summary>
+        public string ConfigProblem => config.Problem;
         public string Notice { get; private set; } = "";
         public bool IsBusy => State == AuthState.Restoring || State == AuthState.Authenticating;
         public bool HasPendingOAuth => pending != null;
@@ -449,7 +479,7 @@ namespace Noxy.Core
         {
             if (State == AuthState.NotConfigured)
             {
-                LastError = "Account sign-in is not configured for this build.";
+                LastError = "Account sign-in is not configured for this build. " + config.Problem;
                 LastErrorKind = AuthErrorKind.NotConfigured;
                 return true;
             }
@@ -732,6 +762,28 @@ namespace Noxy.Core
                     Fail(r); // expired/revoked: back to the sign-in screen
                 }
                 // Network failure: stay signed in and retry on the next tick.
+            });
+        }
+
+        /// <summary>
+        /// Called when the game server rejects the access token (revoked or signed out elsewhere). Forces a refresh now:
+        /// if Supabase also refuses it the session is dropped and the sign-in screen returns; a network failure keeps it.
+        /// </summary>
+        public void Revalidate()
+        {
+            if (State != AuthState.SignedIn || Session == null || refreshing) return;
+            refreshing = true;
+            client.Refresh(Session.RefreshToken, r =>
+            {
+                refreshing = false;
+                if (r.Ok)
+                {
+                    r.Session.Providers = Session.Providers.Count > 0 ? Session.Providers : r.Session.Providers;
+                    if (r.Session.Email.Length == 0) r.Session.Email = Session.Email;
+                    Session = r.Session;
+                    store.Save(Session.ToJson());
+                }
+                else if (r.Kind != AuthErrorKind.Network) { store.Clear(); Fail(r); }
             });
         }
 

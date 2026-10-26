@@ -21,6 +21,15 @@ config.economy = {
 };
 for (const k of Object.keys(config.economy.webhookSecrets)) if (!config.economy.webhookSecrets[k]) delete config.economy.webhookSecrets[k];
 
+// Supabase identity (public values only: project URL + anon/publishable key). Never put the service-role key here.
+config.supabase = { url: env.SUPABASE_URL || '', anonKey: env.SUPABASE_ANON_KEY || '', cacheMs: Number(env.NOXY_SUPABASE_CACHE_SECONDS || 60) * 1000 };
+config.authMode = env.NOXY_AUTH_MODE || ''; // 'supabase' | 'local'; empty = supabase when configured, otherwise local dev accounts
+if (env.SUPABASE_SERVICE_ROLE_KEY) console.warn('SUPABASE_SERVICE_ROLE_KEY is set but this server does not use it. Remove it from this environment.');
+
+// Optional active health probe for registered game servers (TCP connect). Heartbeats stay the primary liveness signal.
+const { tcpProbe } = require('./servers');
+config.servers = { ttlMs: Number(env.NOXY_SERVER_TTL_SECONDS || 30) * 1000, probe: env.NOXY_SERVER_PROBE === 'tcp' ? tcpProbe() : null };
+
 const app = createApp({ dbPath, config });
 const server = http.createServer((req, res) => { app.handle(req, res); });
-server.listen(port, host, () => console.log(`Noxy dev backend listening on http://${host}:${port} (db: ${dbPath})`));
+server.listen(port, host, () => console.log(`Noxy dev backend listening on http://${host}:${port} (db: ${dbPath}, auth: ${app.authMode})`));

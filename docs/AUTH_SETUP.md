@@ -1,6 +1,6 @@
 # Account system setup (Supabase Auth + PostgreSQL)
 
-**Status: not tested against a real Supabase project, Google or Apple.**
+**Status: not tested against a real Supabase project, Google or Apple.** See [SUPABASE_AUDIT.md](SUPABASE_AUDIT.md) for the full audit, what was repaired, exactly which stand-ins the tests used, and `tools/supabase-live-check` to verify your real project.
 What *is* tested: the SQL migration (16 tests on PGlite with a stubbed `auth` schema) and the C# auth state machine
 (43 tests against a simulated GoTrue/PostgREST). Provider login must be verified by you with real credentials.
 
@@ -48,5 +48,6 @@ Register the `noxy` URL scheme in Player Settings (iOS: URL Types; Android: inte
 ## Known limits
 - Browser PKCE flow is used on every platform. Native Apple/Google need an `INativeSignIn` plugin (hook exists, no implementation).
 - `PrefsSessionStore` uses PlayerPrefs (**not secure**); replace with Keychain/Keystore before release.
-- The Node dev backend does not yet verify Supabase JWTs.
+- The game backend (`server/`) now verifies Supabase tokens: start it with `SUPABASE_URL` and `SUPABASE_ANON_KEY` (anon key only) and it adopts the Player ID from the Supabase profile. Gameplay data (wallet, inventory, friends, clans...) is stored in the backend's own database, not in Supabase Postgres.
+- Account deletion for Supabase users is not available in-game (needs a service-role Edge Function).
 - Linking never merges by e-mail; if the other identity already has an account, linking is refused and the user must sign in to it.

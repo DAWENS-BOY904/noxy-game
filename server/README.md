@@ -16,7 +16,18 @@ node --no-warnings src/index.js          # http://127.0.0.1:8787, database file:
 $env:PORT=9000; $env:HOST="0.0.0.0"; node --no-warnings src/index.js   # reachable from a phone on your LAN
 ```
 
-Environment: `PORT`, `HOST` (default `127.0.0.1`), `DB_PATH`. No secrets are needed or read.
+Environment: `PORT`, `HOST` (default `127.0.0.1`), `DB_PATH`.
+
+### Account modes
+| Mode | When | Behaviour |
+|---|---|---|
+| `supabase` | `SUPABASE_URL` and `SUPABASE_ANON_KEY` are set (or `NOXY_AUTH_MODE=supabase`) | The game signs in with Supabase and sends its access token. Every token is verified by Supabase itself (`GET /auth/v1/user`), the Player ID and username come from the user's own `players` row, and password register/login endpoints return 403. If Supabase cannot be reached the server answers 503; it never falls back to another identity. |
+| `local` | neither is set | Dev-only username/password accounts stored (hashed) in SQLite. Never use on a public server. |
+
+`SUPABASE_URL` must be https (loopback http is allowed for local testing). Only the **anon/publishable** key is used; the server warns if `SUPABASE_SERVICE_ROLE_KEY` is present in its environment and never reads it. `NOXY_SUPABASE_CACHE_SECONDS` (default 60) is how long a verified token is trusted before Supabase is asked again, which is also the worst-case delay before a sign-out elsewhere takes effect here.
+
+### Dedicated-server registry
+`NOXY_MATCH_SERVER_KEY` enables the game-server endpoints. `NOXY_SERVER_TTL_SECONDS` (default 30) is the heartbeat timeout; `NOXY_SERVER_PROBE=tcp` additionally requires a TCP connect to the registered address to succeed. See [docs/SUPABASE_AUDIT.md](../docs/SUPABASE_AUDIT.md#server-registry).
 
 In the game: **Settings > Account**, enter the server address (for a phone use `http://<your-PC-LAN-IP>:8787`,
 allow the port in the Windows firewall), then create an account.
@@ -25,7 +36,7 @@ allow the port in the Windows firewall), then create an account.
 
 ```powershell
 cd server
-node --test --no-warnings test/*.test.js     # 28 tests
+node --test --test-force-exit --no-warnings test/*.test.js     # 97 tests
 ```
 
 The client library is also tested against this server: see `../tools/core-tests` (`dotnet test`).
@@ -43,11 +54,13 @@ The client library is also tested against this server: see `../tools/core-tests`
 
 ## API summary
 
-All JSON. `Authorization: Bearer <token>` except register/login.
+All JSON. `Authorization: Bearer <token>` (a Supabase access token in `supabase` mode) except register/login/health.
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /api/auth/register`, `/login`, `/logout` |
+| Health | `GET /api/health` (no auth): `{ ok, authMode, supabaseConfigured }` |
+| Auth | `POST /api/auth/register`, `/login` (local mode only), `/logout` |
+| Servers | `GET /api/servers?mode=&region=` (players: only verified-online servers). Game servers, with `x-noxy-server-key`: `POST /api/internal/servers/register`, `/heartbeat`, `/deregister`, `GET /api/internal/servers` |
 | Me | `GET/PATCH/DELETE /api/me`, `GET /api/me/inventory`, `PUT /api/me/loadout`, `GET/PUT /api/me/settings`, `GET/PUT /api/me/hud/:key` |
 | Players | `GET /api/players/search?q=`, `GET /api/players/:publicId`, `POST /api/players/:publicId/report` |
 | Friends | `GET /api/friends`, `POST /api/friends/requests`, `POST /api/friends/requests/:id/accept|decline|cancel`, `DELETE /api/friends/:publicId` |

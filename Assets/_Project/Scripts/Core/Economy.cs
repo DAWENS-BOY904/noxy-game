@@ -180,7 +180,8 @@ namespace Noxy.Core
         public Action BalanceChanged;
 
         public bool IsAvailable => SignedIn;
-        public string UnavailableReason => SignedIn ? "" : OfflineEconomyService.Reason;
+        public Func<string> UnavailableDetail;
+        public string UnavailableReason => SignedIn ? "" : (UnavailableDetail?.Invoke() ?? OfflineEconomyService.Reason);
         public WalletDto Wallet { get; private set; } = new WalletDto();
         public event Action Changed;
 
@@ -190,7 +191,7 @@ namespace Noxy.Core
         {
             if (!SignedIn)
             {
-                done?.Invoke(new ApiResult<T> { Ok = false, Code = "offline", Message = OfflineEconomyService.Reason });
+                done?.Invoke(new ApiResult<T> { Ok = false, Code = "offline", Message = UnavailableReason });
                 return;
             }
             api.Request<T>(method, path, body, r =>

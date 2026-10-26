@@ -24,5 +24,6 @@
     <Compile Include="$(ProjectRoot)Assets\_Project\Tests\EditMode\**\*.cs" />
     <Compile Include="UnityShim.cs" />
     <Compile Include="IntegrationTests.cs" />
+    <Compile Include="SupabaseBridgeTests.cs" />
   </ItemGroup>
 </Project>

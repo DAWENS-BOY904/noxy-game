@@ -441,6 +441,7 @@ namespace Noxy.Lobby
             BuildGameAccount();
             var acct = AppServices.Account;
             if (acct.State == AccountState.SignedIn) { BuildSignedIn(acct); return; }
+            if (AppServices.Auth.State != AuthState.NotConfigured) { BuildGameServer(acct); return; }
 
             UIWidgets.SectionTitle(content, "Local development server");
             Note("You are using the offline profile on this device. Sign in to get a permanent Player ID, friends, parties and synced settings. " +
@@ -590,6 +591,33 @@ namespace Noxy.Lobby
             BuildTab();
         }
 
+        /// <summary>Supabase is the only sign-in. This shows whether the game server accepted it, and why not if it didn't.</summary>
+        private void BuildGameServer(AccountService acct)
+        {
+            UIWidgets.SectionTitle(content, "Game server");
+            var urlRow = NewRow(76f);
+            RowLabel(urlRow, "Server");
+            urlInput = UIForm.NewInput(urlRow, "Url", "https://your-game-server", InputField.ContentType.Standard, 120);
+            urlInput.text = acct.ServerUrl;
+            UIKit.SetLayout(urlInput.gameObject, preferredWidth: 420f, preferredHeight: 56f, flexibleWidth: 0f);
+            urlInput.onEndEdit.AddListener(v => acct.ServerUrl = v);
+
+            var auth = AppServices.Auth;
+            if (auth.State != AuthState.SignedIn)
+            {
+                Note("Sign in to your game account above to use friends, the store, clans and other online features.", UITheme.Warning);
+                return;
+            }
+            bool working = acct.State == AccountState.Working;
+            Note(working ? "Connecting to the game server..." : acct.UnavailableReason, working ? UITheme.TextDim : UITheme.Warning);
+            ActionButton(working ? "PLEASE WAIT..." : "RETRY CONNECTION", UITheme.Accent, () =>
+            {
+                if (acct.State == AccountState.Working) return;
+                acct.SignInWithSupabase(auth.ValidAccessToken, _ => { if (visible && tab == 6) BuildTab(); });
+                BuildTab();
+            });
+        }
+
         private void BuildSignedIn(AccountService acct)
         {
             var p = AppServices.Profile.Profile;
@@ -604,6 +632,11 @@ namespace Noxy.Lobby
                 GUIUtility.systemCopyBuffer = p.publicId;
                 AppServices.Notifications.Post("Copied", "Player ID copied.", NotificationSeverity.Success);
             });
+            if (acct.SupabaseBound)
+            {
+                Note("Your game account is managed above (Game account). Sign out there. Deleting an account is not available in the game yet; ask the server operator.", UITheme.TextDim);
+                return;
+            }
             ActionButton("SIGN OUT", UITheme.Button, () => Ctx.Confirm("Sign out", "Sign out and return to the offline profile on this device?", "SIGN OUT", () =>
             {
                 FlushSync();

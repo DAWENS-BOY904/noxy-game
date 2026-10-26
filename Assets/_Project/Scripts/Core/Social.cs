@@ -170,12 +170,15 @@ namespace Noxy.Core
 
         public string BaseUrl { get; set; }
         public string Token { get; set; }
+        /// <summary>When set, supplies the bearer token per request (the live, auto-refreshed Supabase access token) and wins over Token.</summary>
+        public Func<string> TokenProvider { get; set; }
+        private string Bearer => TokenProvider != null ? TokenProvider() : Token;
 
         public void Request<T>(string method, string path, Dictionary<string, object> body, Action<ApiResult<T>> done) where T : class, new()
         {
             string json = body == null ? null : MiniJson.Write(body);
             string url = (BaseUrl ?? "").TrimEnd('/') + path;
-            transport.Send(method, url, json, Token, response =>
+            transport.Send(method, url, json, Bearer, response =>
             {
                 var result = new ApiResult<T> { Status = response.Status };
                 if (response.Status == 0)
@@ -220,7 +223,7 @@ namespace Noxy.Core
         /// <summary>For endpoints whose payload has dynamic keys (settings data, HUD layouts).</summary>
         public void RequestRaw(string method, string path, Dictionary<string, object> body, Action<HttpResponse> done)
         {
-            transport.Send(method, (BaseUrl ?? "").TrimEnd('/') + path, body == null ? null : MiniJson.Write(body), Token, done);
+            transport.Send(method, (BaseUrl ?? "").TrimEnd('/') + path, body == null ? null : MiniJson.Write(body), Bearer, done);
         }
     }
 
@@ -304,7 +307,8 @@ namespace Noxy.Core
         /// <summary>Set by AccountService while a valid session exists.</summary>
         public bool SignedIn { get; set; }
         public bool IsAvailable => SignedIn;
-        public string UnavailableReason => SignedIn ? "" : "Sign in to an account (Settings > Account) to use friends, parties and invitations.";
+        public Func<string> UnavailableDetail;
+        public string UnavailableReason => SignedIn ? "" : (UnavailableDetail?.Invoke() ?? "Sign in to an account (Settings > Account) to use friends, parties and invitations.");
         public SocialSnapshot Snapshot { get; private set; } = new SocialSnapshot();
         public event Action Changed;
 

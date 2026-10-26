@@ -59,6 +59,7 @@ namespace Noxy.Core
             this.notifications = notifications;
             this.social = social;
             this.tokens = tokens;
+            social.UnavailableDetail = () => UnavailableReason;
 
             string savedUrl = tokens.LoadServerUrl();
             if (!string.IsNullOrEmpty(savedUrl)) api.BaseUrl = savedUrl;
@@ -74,11 +75,39 @@ namespace Noxy.Core
         /// <summary>Returns "lobby" or "in_match". Set by the app so presence reflects the current scene.</summary>
         public Func<string> PresenceProvider = () => "lobby";
 
+        /// <summary>
+        /// True while this session is bound to a verified Supabase account. The game server then accepts the live Supabase
+        /// access token, nothing is stored in the legacy token store, and Supabase (not this class) owns session lifetime.
+        /// </summary>
+        public bool SupabaseBound { get; private set; }
+        /// <summary>Raised when the game server rejects the Supabase token, so the auth layer can re-verify the session.</summary>
+        public Action OnUnauthorized;
+        private bool pendingSupabaseRetry;
+        private Func<string> supabaseToken;
+        private float unauthorizedCooldown;
+
+        /// <summary>Plain-language reason online features are unavailable right now (never claims success it doesn't have).</summary>
+        public string UnavailableReason
+        {
+            get
+            {
+                if (State == AccountState.SignedIn) return "";
+                if (SupabaseBound)
+                    return State == AccountState.Working
+                        ? "Connecting to the game server..."
+                        : "Your account is verified, but the game server is unavailable: " + (string.IsNullOrEmpty(LastError) ? "not reachable." : LastError);
+                return CommunityText.OfflineReason;
+            }
+        }
+
         public event Action Changed;
 
         /// <summary>Optional wallet/store client; kept in sync with the signed-in state.</summary>
-        public RemoteEconomyService Economy { get; set; }
-        public RemoteCommunityService Community { get; set; }
+        private RemoteEconomyService economyService;
+        private RemoteCommunityService communityService;
+        // Setting a service also tells it why it is unavailable, so every screen explains the real reason.
+        public RemoteEconomyService Economy { get => economyService; set { economyService = value; if (value != null) value.UnavailableDetail = () => UnavailableReason; } }
+        public RemoteCommunityService Community { get => communityService; set { communityService = value; if (value != null) value.UnavailableDetail = () => UnavailableReason; } }
 
         public string ServerUrl
         {
@@ -96,10 +125,32 @@ namespace Noxy.Core
             problem = null;
             if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
             {
-                problem = "Enter a full address like http://192.168.1.20:8787";
+                problem = "Enter a full address like https://game.example.com or http://192.168.1.20:8787";
+                return false;
+            }
+            // The account session token is sent to this server, so clear-text http is only allowed on this machine or a private network.
+            if (uri.Scheme == "http" && !IsPrivateHost(uri.Host))
+            {
+                problem = "This address must use https:// (plain http is only allowed for localhost and private networks).";
                 return false;
             }
             return true;
+        }
+
+        /// <summary>Loopback, RFC 1918 / link-local IPv4, and .local / single-label names. Everything else needs https.</summary>
+        public static bool IsPrivateHost(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return false;
+            host = host.Trim('[', ']').ToLowerInvariant();
+            if (host == "localhost" || host == "::1" || host.EndsWith(".local")) return true;
+            if (System.Net.IPAddress.TryParse(host, out var ip))
+            {
+                if (System.Net.IPAddress.IsLoopback(ip)) return true;
+                var b = ip.GetAddressBytes();
+                if (b.Length != 4) return false;
+                return b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254);
+            }
+            return false;
         }
 
         // ---------- sign in / out ----------
@@ -118,6 +169,60 @@ namespace Noxy.Core
                 if (!r.Ok) { SetState(AccountState.SignedOut); Finish(done, ServiceResult.Fail(r.Friendly)); return; }
                 BeginSession(r.Value.token, r.Value.player, done);
             });
+        }
+
+        /// <summary>
+        /// Starts a game-server session from a verified Supabase login. The server verifies the token with Supabase itself and
+        /// adopts the Player ID stored in the Supabase profile. Failure leaves online features OFF with a visible reason; it
+        /// never falls back to a fake or local identity.
+        /// </summary>
+        public void SignInWithSupabase(Func<string> accessToken, Action<ServiceResult> done = null)
+        {
+            if (State == AccountState.Working) { done?.Invoke(ServiceResult.Fail("Please wait...")); return; }
+            SupabaseBound = true;
+            supabaseToken = accessToken;
+            pendingSupabaseRetry = false;
+            if (!IsValidServerUrl(api.BaseUrl, out string problem)) { SetState(AccountState.SignedOut); Finish(done, ServiceResult.Fail(problem)); return; }
+
+            SetState(AccountState.Working);
+            api.Token = null;
+            api.TokenProvider = accessToken;
+            api.Request<MeDto>("GET", "/api/me", null, r =>
+            {
+                if (!r.Ok)
+                {
+                    SetState(AccountState.SignedOut);
+                    // Network trouble and 5xx are worth retrying; a 4xx means the server refused this account and retrying won't help.
+                    if (r.NetworkError || r.Status >= 500) { pendingSupabaseRetry = true; retryTimer = RetrySeconds; }
+                    Finish(done, ServiceResult.Fail(r.Friendly));
+                    return;
+                }
+                BeginSession(null, r.Value, done);
+            });
+        }
+
+        /// <summary>
+        /// Keeps the game-server session in step with the verified Supabase session. Safe to call on every auth change:
+        /// it starts a server session only for a verified sign-in and ends it only once Supabase is really signed out.
+        /// </summary>
+        public void SyncWithAuth(AuthService auth)
+        {
+            if (auth == null) return;
+            if (auth.State == AuthState.SignedIn && auth.Session != null)
+            {
+                if (!SupabaseBound && State != AccountState.Working) SignInWithSupabase(auth.ValidAccessToken);
+            }
+            else if ((auth.State == AuthState.SignedOut || auth.State == AuthState.NotConfigured) && SupabaseBound)
+            {
+                EndSupabaseSession();
+            }
+        }
+
+        /// <summary>Called when the Supabase session ends (sign-out, expiry, revocation).</summary>
+        public void EndSupabaseSession()
+        {
+            if (!SupabaseBound) return;
+            EndSessionLocally();
         }
 
         /// <summary>Resume a saved session (called at startup). Silent when the server is unreachable.</summary>
@@ -141,18 +246,19 @@ namespace Noxy.Core
 
         private void BeginSession(string token, MeDto me, Action<ServiceResult> done)
         {
-            api.Token = token;
+            if (!SupabaseBound) api.Token = token;
             api.Request<InventoryDto>("GET", "/api/me/inventory", null, inv =>
             {
                 if (!inv.Ok)
                 {
-                    api.Token = null;
+                    if (!SupabaseBound) api.Token = null;
                     SetState(AccountState.SignedOut);
+                    if (SupabaseBound && (inv.NetworkError || inv.Status >= 500)) { pendingSupabaseRetry = true; retryTimer = RetrySeconds; }
                     Finish(done, ServiceResult.Fail(inv.Friendly));
                     return;
                 }
 
-                tokens.SaveToken(token);
+                if (!SupabaseBound) tokens.SaveToken(token); // a Supabase access token must never land in the legacy token store
                 pendingRestore = false;
                 PublicId = me.publicId;
                 Username = me.username;
@@ -182,6 +288,7 @@ namespace Noxy.Core
                 EndSessionLocally();
                 done?.Invoke(ServiceResult.Ok);
             }
+            if (SupabaseBound) { Local(); return; } // the auth layer ends the Supabase session itself
             if (State == AccountState.SignedIn) api.Request<OkDto>("POST", "/api/auth/logout", null, _ => Local());
             else Local();
         }
@@ -214,6 +321,10 @@ namespace Noxy.Core
         private void EndSessionLocally()
         {
             api.Token = null;
+            api.TokenProvider = null;
+            SupabaseBound = false;
+            supabaseToken = null;
+            pendingSupabaseRetry = false;
             tokens.SaveToken("");
             social.SignedIn = false;
             social.Clear();
@@ -344,6 +455,13 @@ namespace Noxy.Core
 
         public void Tick(float dt)
         {
+            if (unauthorizedCooldown > 0f) unauthorizedCooldown -= dt;
+            if (State == AccountState.SignedOut && SupabaseBound && pendingSupabaseRetry)
+            {
+                retryTimer -= dt;
+                if (retryTimer <= 0f) { retryTimer = RetrySeconds; SignInWithSupabase(supabaseToken); }
+                return;
+            }
             if (State == AccountState.SignedOut && pendingRestore)
             {
                 retryTimer -= dt;
@@ -391,6 +509,12 @@ namespace Noxy.Core
 
         private void HandleHealth(bool networkError, int status)
         {
+            if (status == 401 && SupabaseBound)
+            {
+                // Supabase owns the session: ask it whether the account is still valid instead of silently dropping online play.
+                if (unauthorizedCooldown <= 0f) { unauthorizedCooldown = 30f; OnUnauthorized?.Invoke(); }
+                return;
+            }
             if (status == 401)
             {
                 EndSessionLocally();

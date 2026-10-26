@@ -717,4 +717,42 @@ namespace Noxy.Lobby
 
         private static string Cap(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);
     }
+
+    // ------------------------------------------------------------ server list
+    public sealed class ServersScreen : CommunityScreen
+    {
+        public override LobbyScreenId Id => LobbyScreenId.Servers;
+        public override string Title => "Servers";
+        protected override string Banner => "Only servers the backend has verified as online (a heartbeat within the last 30 seconds) are listed. Joining a server is not connected yet, so this list is informational.";
+        protected override string[] TabNames => new[] { "ALL", "BATTLE ROYALE", "LONE WOLF" };
+
+        private ServerListDto data;
+        private static readonly string[] Modes = { null, "battle_royale", "lone_wolf" };
+
+        protected override TabInput InputFor(int tab) => new TabInput();
+        protected override void OnGo() { }
+        protected override void LoadTab() { data = null; Svc.LoadServers(Modes[Tab], r => Load(r, v => data = v)); }
+
+        protected override IEnumerable<RowData> GetRows()
+        {
+            if (GuardOffline(out var offline)) { yield return offline; yield break; }
+            if (data == null) { yield return Status(); yield break; }
+            if (data.servers.Count == 0)
+            {
+                yield return EconomyUi.Notice("No servers online", "No dedicated server has reported healthy recently. Nothing is shown unless a server is actually running and sending heartbeats.", UITheme.TextDim);
+                yield break;
+            }
+            foreach (var s in data.servers)
+            {
+                bool full = s.players >= s.capacity;
+                yield return new RowData
+                {
+                    Title = s.name + "  -  " + s.region,
+                    Subtitle = s.mode.Replace('_', ' ') + "  -  " + s.host + ":" + s.port + "  -  seen " + s.lastSeenSeconds + "s ago",
+                    RightText = s.players + " / " + s.capacity,
+                    RightColor = full ? UITheme.Warning : UITheme.Success
+                };
+            }
+        }
+    }
 }

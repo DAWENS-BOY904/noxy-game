@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const supabaseAuth = require('./supabaseauth');
 
 const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'catalog.json'), 'utf8'));
 const ITEMS = new Map(catalog.items.map(i => [i.id, i]));
@@ -23,6 +24,9 @@ const DEFAULT_CONFIG = {
   // Secrets come from the environment (see index.js); empty means the feature is disabled.
   economy: { matchServerKey: '', testPayments: false, verifiers: {}, webhookSecrets: {}, adsSecret: '' },
   idGenerator: () => String(crypto.randomInt(1_000_000_000, 10_000_000_000)),
+  // Public Supabase settings only (project URL + anon key). authMode: 'supabase' | 'local'; empty = supabase when configured.
+  supabase: { url: '', anonKey: '', cacheMs: 60_000 },
+  authMode: '',
 };
 
 const CHEAT_CATEGORIES = ['aimbot', 'wallhack', 'speed_hack', 'abnormal_headshots', 'shoots_through_walls', 'walks_through_walls', 'abnormal_movement'];
@@ -54,6 +58,16 @@ function createApp(options = {}) {
     flagged   INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL
   )`);
+
+  // Players created through Supabase carry the Supabase Auth user id; legacy local-password accounts leave it NULL.
+  if (!db.prepare('PRAGMA table_info(players)').all().some((c) => c.name === 'supabase_user_id')) {
+    db.exec('ALTER TABLE players ADD COLUMN supabase_user_id TEXT');
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_players_supabase_user ON players(supabase_user_id) WHERE supabase_user_id IS NOT NULL');
+
+  const sb = supabaseAuth.create({ url: config.supabase.url, anonKey: config.supabase.anonKey, fetchImpl: options.fetchImpl, now, cacheMs: config.supabase.cacheMs });
+  const authMode = config.authMode || (sb.enabled ? 'supabase' : 'local');
+  if (authMode === 'supabase' && !sb.enabled) throw new Error('authMode is supabase but SUPABASE_URL / SUPABASE_ANON_KEY are not set.');
 
   const q = {
     one: (sql, ...p) => db.prepare(sql).get(...p),
@@ -91,7 +105,7 @@ function createApp(options = {}) {
     if (typeof v !== 'string' || v.length < min || v.length > max) fail(400, 'invalid_' + name, `${name} must be ${min}-${max} characters.`);
     return v;
   }
-  const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
+  const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/; // same rule as the Supabase players table
   const validUsername = u => typeof u === 'string' && USERNAME_RE.test(u);
   const validPublicId = id => typeof id === 'string' && /^[1-9][0-9]{9}$/.test(id);
 
@@ -165,22 +179,25 @@ function createApp(options = {}) {
   }
 
   // ---------- auth ----------
+  // One place creates a player and its default rows, so local and Supabase-backed accounts start identically.
+  function insertPlayer(publicId, username, salt, hash, supabaseUserId) {
+    const r = q.run('INSERT INTO players(public_id, username, password_salt, password_hash, created_at, level, xp, credits, cores, supabase_user_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      publicId, username, salt, hash, now(), 1, 0, 0, 0, supabaseUserId);
+    const id = Number(r.lastInsertRowid);
+    q.run('INSERT INTO player_statistics(player_id) VALUES (?)', id);
+    q.run('INSERT INTO player_settings(player_id, updated_at) VALUES (?,?)', id, now());
+    for (const item of catalog.startingOwned) q.run('INSERT INTO player_inventory(player_id,item_id,acquired_at) VALUES (?,?,?)', id, item, now());
+    for (const [slot, item] of Object.entries(catalog.startingLoadout)) q.run('INSERT INTO player_equipped_items(player_id,slot,item_id) VALUES (?,?,?)', id, slot, item);
+    return id;
+  }
+
   function createPlayer(username, password) {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(password, salt);
     for (let attempt = 0; attempt < 12; attempt++) {
       const publicId = config.idGenerator();
       try {
-        return tx(() => {
-          const r = q.run('INSERT INTO players(public_id, username, password_salt, password_hash, created_at, level, xp, credits, cores) VALUES (?,?,?,?,?,?,?,?,?)',
-            publicId, username, salt, hash, now(), 1, 0, 0, 0);
-          const id = Number(r.lastInsertRowid);
-          q.run('INSERT INTO player_statistics(player_id) VALUES (?)', id);
-          q.run('INSERT INTO player_settings(player_id, updated_at) VALUES (?,?)', id, now());
-          for (const item of catalog.startingOwned) q.run('INSERT INTO player_inventory(player_id,item_id,acquired_at) VALUES (?,?,?)', id, item, now());
-          for (const [slot, item] of Object.entries(catalog.startingLoadout)) q.run('INSERT INTO player_equipped_items(player_id,slot,item_id) VALUES (?,?,?)', id, slot, item);
-          return id;
-        });
+        return tx(() => insertPlayer(publicId, username, salt, hash, null));
       } catch (e) {
         const msg = String(e.message);
         if (msg.includes('players.public_id')) continue; // ID collision: generate another
@@ -207,6 +224,47 @@ function createApp(options = {}) {
     const p = q.one('SELECT * FROM players WHERE id = ?', s.player_id);
     if (!p) fail(401, 'unauthorized', 'Account no longer exists.');
     return { player: p, tokenHash: s.token_hash };
+  }
+
+  // The Supabase profile owns the Player ID and username. This table only mirrors them so gameplay data can reference a
+  // stable local row. The Player ID is never generated here for Supabase accounts and never changes once adopted.
+  function adoptSupabasePlayer(identity) {
+    const p = identity.profile;
+    let row = q.one('SELECT * FROM players WHERE supabase_user_id = ?', identity.userId);
+    if (row) {
+      if (!identity.fresh || (row.username === p.username && row.public_id === p.playerId)) return row;
+      if (row.public_id !== p.playerId) fail(409, 'player_id_mismatch', 'This server holds a different Player ID for your account than the account service. Contact the server operator.');
+      try { q.run('UPDATE players SET username = ? WHERE id = ?', p.username, row.id); }
+      catch (e) { if (String(e.message).includes('players.username')) fail(409, 'username_conflict', 'Your username conflicts with a different local record on this server.'); throw e; }
+      return q.one('SELECT * FROM players WHERE id = ?', row.id);
+    }
+    try {
+      const id = tx(() => insertPlayer(p.playerId, p.username, '', '', identity.userId));
+      return q.one('SELECT * FROM players WHERE id = ?', id);
+    } catch (e) {
+      const again = q.one('SELECT * FROM players WHERE supabase_user_id = ?', identity.userId); // concurrent first request won the race
+      if (again) return again;
+      const msg = String(e.message);
+      if (msg.includes('players.public_id')) fail(409, 'player_id_conflict', 'This server already has a different account using your Player ID. Contact the server operator.');
+      if (msg.includes('players.username')) fail(409, 'username_conflict', 'Your username conflicts with a different local record on this server.');
+      throw e;
+    }
+  }
+
+  const bearerOf = req => { const m = /^Bearer (\S+)$/.exec(req.headers['authorization'] || ''); return m ? m[1] : null; };
+
+  async function authenticateRequest(req) {
+    const token = bearerOf(req);
+    if (token && sb.looksLikeJwt(token)) {
+      if (authMode !== 'supabase') fail(401, 'unauthorized', 'This server is not configured for Supabase sign-in.');
+      let identity;
+      try { identity = await sb.identify(token); }
+      catch (e) { if (e instanceof supabaseAuth.SupabaseError) fail(e.status, e.code, e.message); throw e; }
+      const player = adoptSupabasePlayer(identity);
+      return { player, tokenHash: sha256(token), supabase: { token, userId: identity.userId } };
+    }
+    if (authMode === 'supabase') fail(401, 'unauthorized', 'Sign in required.');
+    return authenticate(req);
   }
 
   // ---------- invites / party ----------
@@ -313,6 +371,7 @@ function createApp(options = {}) {
   const clanwars = modctx.clanwars = require('./clanwars').create(modctx);
   const companions = require('./companions').create(modctx);
   const mapevents = require('./mapevents').create(modctx);
+  const servers = require('./servers').create(modctx);
 
   // ---------- routes ----------
   const routes = [];
@@ -322,9 +381,14 @@ function createApp(options = {}) {
     routes.push({ method, re, keys, handler, auth: opts.auth !== false });
   };
 
+  route('GET', '/api/health', () => ({ body: { ok: true, authMode, supabaseConfigured: sb.enabled } }), { auth: false });
+
+  const localAuthOff = () => fail(403, 'local_auth_disabled', 'Password accounts are disabled on this server. Sign in with your Supabase account.');
+
   route('POST', '/api/auth/register', ({ body, ip }) => {
+    if (authMode === 'supabase') localAuthOff();
     rateLimit('auth', ip);
-    if (!validUsername(body.username)) fail(400, 'invalid_username', 'Username must be 3-16 letters, numbers or underscores.');
+    if (!validUsername(body.username)) fail(400, 'invalid_username', 'Username must be 3-20 letters, numbers or underscores.');
     requireString(body.password, 'password', 8, 128);
     const id = createPlayer(body.username, body.password);
     const player = q.one('SELECT * FROM players WHERE id = ?', id);
@@ -332,6 +396,7 @@ function createApp(options = {}) {
   }, { auth: false });
 
   route('POST', '/api/auth/login', ({ body, ip }) => {
+    if (authMode === 'supabase') localAuthOff();
     rateLimit('auth', ip);
     const generic = () => fail(401, 'invalid_credentials', 'Incorrect username or password.');
     if (typeof body.username !== 'string' || typeof body.password !== 'string' || body.password.length > 128) generic();
@@ -343,23 +408,34 @@ function createApp(options = {}) {
   }, { auth: false });
 
   route('POST', '/api/auth/logout', ({ auth }) => {
+    // Supabase sessions are ended by the client against Supabase; here we only drop our verification cache.
+    if (auth.supabase) sb.forget(auth.supabase.token);
     q.run('DELETE FROM sessions WHERE token_hash = ?', auth.tokenHash);
     return { body: { ok: true } };
   });
 
   route('GET', '/api/me', ({ me }) => ({ body: meObject(me) }));
 
-  route('PATCH', '/api/me', ({ me, body }) => {
-    if (!validUsername(body.username)) fail(400, 'invalid_username', 'Username must be 3-16 letters, numbers or underscores.');
+  route('PATCH', '/api/me', async ({ me, body, auth }) => {
+    if (!validUsername(body.username)) fail(400, 'invalid_username', 'Username must be 3-20 letters, numbers or underscores.');
     if (body.username.toLowerCase() === me.username.toLowerCase() && body.username === me.username) return { body: meObject(me) };
     if (me.username_changed_at && now() - me.username_changed_at < config.usernameChangeCooldownMs)
       fail(429, 'username_cooldown', 'You can change your name once per day.');
+    if (auth.supabase) {
+      // Save in Supabase first (the user's own token, RLS applies) and only mirror locally once it read back correctly.
+      try { await sb.updateUsername(auth.supabase.token, auth.supabase.userId, body.username); }
+      catch (e) { if (e instanceof supabaseAuth.SupabaseError) fail(e.status, e.code, e.message); throw e; }
+      try { q.run('UPDATE players SET username = ?, username_changed_at = ? WHERE id = ?', body.username, now(), me.id); }
+      catch (e) { if (String(e.message).includes('players.username')) fail(409, 'username_conflict', 'Your username conflicts with a different local record on this server.'); throw e; }
+      return { body: meObject(q.one('SELECT * FROM players WHERE id = ?', me.id)) };
+    }
     try { q.run('UPDATE players SET username = ?, username_changed_at = ? WHERE id = ?', body.username, now(), me.id); }
     catch (e) { if (String(e.message).includes('players.username')) fail(409, 'username_taken', 'That username is already taken.'); throw e; }
     return { body: meObject(q.one('SELECT * FROM players WHERE id = ?', me.id)) };
   });
 
   route('DELETE', '/api/me', ({ me, body, ip }) => {
+    if (!me.password_hash) fail(501, 'not_supported', 'Deleting a Supabase account needs a privileged server function that is not deployed yet. Contact the operator.');
     rateLimit('auth', ip);
     requireString(body.password, 'password', 1, 128);
     const attempt = Buffer.from(hashPassword(body.password, me.password_salt), 'hex');
@@ -389,6 +465,7 @@ function createApp(options = {}) {
   clanwars.install(route);
   companions.install(route);
   mapevents.install(route);
+  servers.install(route);
 
   route('GET', '/api/me/settings', ({ me }) => {
     const s = settingsRow(me.id);
@@ -430,11 +507,11 @@ function createApp(options = {}) {
     let rows = [];
     if (/^\d{10}$/.test(text)) {
       if (validPublicId(text)) rows = q.all('SELECT * FROM players WHERE public_id = ?', text);
-    } else if (/^[A-Za-z0-9_]{3,16}$/.test(text)) {
+    } else if (USERNAME_RE.test(text)) {
       rows = q.all("SELECT * FROM players WHERE username = ? OR username LIKE ? ESCAPE '\\' ORDER BY (username = ?) DESC, username LIMIT 10",
         text, text.replace(/[\\%_]/g, c => '\\' + c) + '%', text);
     } else {
-      fail(400, 'invalid_query', 'Enter a 10-digit player ID or a username (3-16 characters).');
+      fail(400, 'invalid_query', 'Enter a 10-digit player ID or a username (3-20 characters).');
     }
     const results = rows.filter(p => !isBlockedEitherWay(me.id, p.id)).map(p => brief(me.id, p));
     return { body: { results } };
@@ -727,7 +804,7 @@ function createApp(options = {}) {
       if (!matched) fail(pathMatched ? 405 : 404, pathMatched ? 'method_not_allowed' : 'not_found', 'No such endpoint.');
       const body = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) ? await readBody(req) : {};
       const ctx = { req, ip, body, params, query: url.searchParams };
-      if (matched.auth) { ctx.auth = authenticate(req); ctx.me = ctx.auth.player; }
+      if (matched.auth) { ctx.auth = await authenticateRequest(req); ctx.me = ctx.auth.player; }
       const out = await matched.handler(ctx);
       send(out.status || 200, out.body);
     } catch (e) {
@@ -741,7 +818,7 @@ function createApp(options = {}) {
     }
   }
 
-  return { handle, db, config, economy, fairplay, clans, clanwars, companions, mapevents, close: () => db.close() };
+  return { handle, db, config, authMode, supabase: sb, economy, fairplay, clans, clanwars, companions, mapevents, servers, close: () => db.close() };
 }
 
 module.exports = { createApp, catalog };

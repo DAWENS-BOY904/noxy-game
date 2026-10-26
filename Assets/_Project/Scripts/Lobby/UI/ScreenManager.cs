@@ -25,7 +25,8 @@ namespace Noxy.Lobby
         Clans,
         ClanWars,
         Companions,
-        Reputation
+        Reputation,
+        Servers
     }
 
     /// <summary>Shared references handed to every screen. Avoids singletons inside UI code.</summary>

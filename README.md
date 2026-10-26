@@ -100,3 +100,9 @@ See `Assets/_Project/Art/Placeholders/README.md` (character prefab, stage, UI ar
 
 ## Economy
 Wallet, missions, Booyah promo reward, diamond store (sandbox) and cosmetic purchases are implemented server-side. Not production-ready, see [docs/ECONOMY_SETUP.md](docs/ECONOMY_SETUP.md).
+
+## Supabase accounts and the game backend
+Supabase is the only sign-in: the game backend verifies the Supabase session and uses the Player ID stored in your Supabase profile. **Not verified against a real Supabase project, Google or Apple** (no credentials were available); all tests used a fake or PGlite. Run `tools/supabase-live-check` against your project. Known open gaps (plain-text session storage, no in-game account deletion, gameplay data in the backend's SQLite file rather than Supabase Postgres) are listed in [docs/SUPABASE_AUDIT.md](docs/SUPABASE_AUDIT.md).
+
+## Clans, clan wars, companions, map events, fair play
+Implemented on the dev backend and in the lobby (CLANS, CLAN WARS, COMPANIONS, REPUTATION). No dedicated game server exists yet, so war and map-event results were only tested by simulating the server over HTTP; not run in Unity; not production-ready. See [docs/CLANS_FAIRPLAY_SETUP.md](docs/CLANS_FAIRPLAY_SETUP.md).

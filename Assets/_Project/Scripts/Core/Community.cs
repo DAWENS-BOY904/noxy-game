@@ -131,6 +131,14 @@ namespace Noxy.Core
     [Serializable] public sealed class FairRulesDto { public int startScore, cleanMatchBonus, appealWindowDays; public bool reportsNeverAutoPunish; public List<ReputationLevelDto> levels = new List<ReputationLevelDto>(); }
     [Serializable] public sealed class AppealResultDto { public int appealId; public string status = ""; }
 
+    // ---------- dedicated server list ----------
+    [Serializable] public sealed class GameServerDto
+    {
+        public string id = "", name = "", region = "", mode = "", host = "", version = "", status = "";
+        public int port, capacity, players, lastSeenSeconds;
+    }
+    [Serializable] public sealed class ServerListDto { public List<GameServerDto> servers = new List<GameServerDto>(); public long serverNow; }
+
     public static class ClanRoles
     {
         public static int Rank(string role)
@@ -174,7 +182,7 @@ namespace Noxy.Core
         {
             switch (code)
             {
-                case "offline": return OfflineReason;
+                case "offline": return string.IsNullOrEmpty(fallback) ? OfflineReason : fallback;
                 case "name_taken": return "That clan name is already taken.";
                 case "tag_taken": return "That clan tag is already taken.";
                 case "already_in_clan": return "You are already in a clan.";
@@ -324,6 +332,9 @@ namespace Noxy.Core
         void UnlockCompanion(string id, string variantId, string currency, Action<ApiResult<CompanionsDto>> done);
         void EquipCompanion(string idOrNull, string variantId, Action<ApiResult<CompanionsDto>> done);
 
+        // dedicated servers: only servers the backend has verified as online (fresh heartbeat) are returned
+        void LoadServers(string mode, Action<ApiResult<ServerListDto>> done);
+
         // map events and fair play
         void LoadMapEvents(string matchId, Action<ApiResult<MapEventsDto>> done);
         void LoadFairPlay(Action<ApiResult<FairPlayDto>> done);
@@ -364,6 +375,7 @@ namespace Noxy.Core
         public void LoadCompanions(Action<ApiResult<CompanionsDto>> done) => Fail(done);
         public void UnlockCompanion(string id, string variantId, string currency, Action<ApiResult<CompanionsDto>> done) => Fail(done);
         public void EquipCompanion(string idOrNull, string variantId, Action<ApiResult<CompanionsDto>> done) => Fail(done);
+        public void LoadServers(string mode, Action<ApiResult<ServerListDto>> done) => Fail(done);
         public void LoadMapEvents(string matchId, Action<ApiResult<MapEventsDto>> done) => Fail(done);
         public void LoadFairPlay(Action<ApiResult<FairPlayDto>> done) => Fail(done);
         public void LoadFairPlayRules(Action<ApiResult<FairRulesDto>> done) => Fail(done);
@@ -382,11 +394,13 @@ namespace Noxy.Core
         public Action BalanceChanged;
 
         public bool IsAvailable => SignedIn;
-        public string UnavailableReason => SignedIn ? "" : CommunityText.OfflineReason;
+        /// <summary>Why online features are off right now (set by the app from the account state). Falls back to a generic sign-in hint.</summary>
+        public Func<string> UnavailableDetail;
+        public string UnavailableReason => SignedIn ? "" : (UnavailableDetail?.Invoke() ?? CommunityText.OfflineReason);
 
         private void Call<T>(string method, string path, Dictionary<string, object> body, Action<ApiResult<T>> done, bool balance = false) where T : class, new()
         {
-            if (!SignedIn) { done?.Invoke(new ApiResult<T> { Ok = false, Code = "offline", Message = CommunityText.OfflineReason }); return; }
+            if (!SignedIn) { done?.Invoke(new ApiResult<T> { Ok = false, Code = "offline", Message = UnavailableReason }); return; }
             api.Request<T>(method, path, body, r =>
             {
                 if (r.Ok && balance) BalanceChanged?.Invoke();
@@ -441,6 +455,8 @@ namespace Noxy.Core
             Call("PUT", "/api/me/companion", body, done);
         }
 
+        public void LoadServers(string mode, Action<ApiResult<ServerListDto>> done) =>
+            Call("GET", "/api/servers" + (string.IsNullOrEmpty(mode) ? "" : "?mode=" + E(mode)), null, done);
         public void LoadMapEvents(string matchId, Action<ApiResult<MapEventsDto>> done) => Call("GET", "/api/matches/" + E(matchId) + "/events", null, done);
         public void LoadFairPlay(Action<ApiResult<FairPlayDto>> done) => Call("GET", "/api/fairplay/me", null, done);
         public void LoadFairPlayRules(Action<ApiResult<FairRulesDto>> done) => Call("GET", "/api/fairplay/rules", null, done);

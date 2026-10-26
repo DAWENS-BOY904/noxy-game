@@ -160,8 +160,13 @@ namespace Noxy.Lobby
             var profile = AppServices.Profile;
             if (profile == null) return;
 
+            var account = AppServices.Account;
             if (auth.State == AuthState.SignedIn && auth.Player != null)
             {
+                // The game server verifies this same Supabase session and owns level/xp/wallet. Start (or keep) that session.
+                account?.SyncWithAuth(auth);
+                // Show the Supabase identity only until the game server confirms; its values replace these afterwards.
+                if (account != null && account.State == AccountState.SignedIn) return;
                 var snapshot = JsonUtility.FromJson<PlayerProfile>(JsonUtility.ToJson(profile.Profile));
                 snapshot.publicId = auth.Player.PlayerId;
                 snapshot.playerId = auth.Player.UserId;
@@ -172,7 +177,8 @@ namespace Noxy.Lobby
             }
             else
             {
-                profile.RevertToLocal();
+                if (account != null && account.SupabaseBound) account.SyncWithAuth(auth);
+                else profile.RevertToLocal();
             }
         }
     }

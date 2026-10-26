@@ -36,3 +36,6 @@ tools/core-tests/obj/
 # Local Supabase config (public URL/key only, but per-environment)
 Assets/_Project/Resources/SupabaseConfig.json
 Assets/_Project/Resources/SupabaseConfig.json.meta
+
+# Output of tools/supabase-live-check
+tools/supabase-live-check/evidence-*.json

@@ -137,9 +137,9 @@ namespace Noxy.Lobby
         private void BuildUnconfigured()
         {
             Line("Accounts unavailable", UITheme.FontTitle, UITheme.Text, FontStyle.Bold);
-            Line("This build has no account server configured, so Google, Apple and e-mail sign-in are disabled. " +
-                 "Add your Supabase URL and public key to Resources/SupabaseConfig.json (see docs/AUTH_SETUP.md).",
-                UITheme.FontCaption, UITheme.Warning, FontStyle.Normal, 150f);
+            Line("This build has no usable account server configuration, so Google, Apple and e-mail sign-in are disabled. " +
+                 AppServices.Auth.ConfigProblem + " (see docs/AUTH_SETUP.md)",
+                UITheme.FontCaption, UITheme.Warning, FontStyle.Normal, 190f);
             Btn("PLAY OFFLINE", UITheme.Accent, PlayOffline);
             Line("Offline play uses a local profile with no Player ID and no online features.", 20, UITheme.TextDim, FontStyle.Normal, 70f);
         }

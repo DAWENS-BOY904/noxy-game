@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using Noxy.Core;
 using UnityEngine;
@@ -67,13 +68,14 @@ namespace Noxy.Lobby
             economy.BalanceChanged = () => Account.ResyncInventory();
             Account.Economy = economy;
             Economy = economy;
-            var social2 = new RemoteCommunityService(api);
-            social2.BalanceChanged = () => economy.RefreshWallet();
-            Account.Community = social2;
-            Community = social2;
+            var communityService = new RemoteCommunityService(api);
+            communityService.BalanceChanged = () => economy.RefreshWallet();
+            Account.Community = communityService;
+            Community = communityService;
 
             var supabase = SupabaseConfigLoader.Load();
             Auth = new AuthService(new SupabaseAuthClient(new UnityWebRequestTransport(), supabase), new PrefsSessionStore(), supabase);
+            Account.OnUnauthorized = () => Auth.Revalidate();
             Auth.Changed += () => AccountBridge.Apply(Auth);
             OAuthLauncher.Initialize();
 
