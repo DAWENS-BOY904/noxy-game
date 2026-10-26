@@ -18,6 +18,8 @@ namespace Noxy.Lobby
         private RectTransform markerLayer, playerMarker, planeMarker, waypointMarker;
         private Image routeLine;
         private readonly List<RectTransform> poiLabels = new List<RectTransform>();
+        private readonly Dictionary<string, RectTransform> shopMarkers = new Dictionary<string, RectTransform>();
+        private readonly Dictionary<string, RectTransform> currencyMarkers = new Dictionary<string, RectTransform>();
         private Text distanceText;
         private bool expanded;
         private Vector2? waypoint;
@@ -88,7 +90,14 @@ namespace Noxy.Lobby
         public void ClearWaypoint() { waypoint = null; }
 
         /// <summary>Places markers. Positions are world metres; the map never decides anything.</summary>
-        public void Refresh(Vector3 player, float yawDegrees, Vector3? plane, BrRouteDto route)
+        private static RectTransform Marker(Transform parent, string name, Color c, float size)
+        {
+            var icon = UIKit.NewImage(parent, name, c, UISprites.Circle);
+            UIKit.Anchor(icon.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(size, size));
+            return icon.rectTransform;
+        }
+
+        public void Refresh(Vector3 player, float yawDegrees, Vector3? plane, BrRouteDto route, List<BrShopDto> shops, List<BrCurrencyPickupDto> currency)
         {
             float world = layout.WorldSize;
             // visible window in UV space
@@ -138,6 +147,45 @@ namespace Noxy.Lobby
                 distanceText.text = Mathf.RoundToInt(Mathf.Sqrt(dx * dx + dz * dz)) + " m to marker";
             }
             else distanceText.text = "";
+
+            var keepShops = new HashSet<string>();
+            if (shops != null)
+            {
+                foreach (var s in shops)
+                {
+                    if (string.IsNullOrEmpty(s.id)) continue;
+                    keepShops.Add(s.id);
+                    if (!shopMarkers.TryGetValue(s.id, out var marker))
+                    {
+                        marker = Marker(markerLayer, "Shop_" + s.id, new Color(0.95f, 0.75f, 0.2f, 0.95f), 12f);
+                        shopMarkers[s.id] = marker;
+                    }
+                    marker.anchoredPosition = ToLocal(s.x, s.z);
+                    marker.gameObject.SetActive(true);
+                }
+            }
+            foreach (var k in new List<string>(shopMarkers.Keys))
+                if (!keepShops.Contains(k)) { if (shopMarkers[k] != null) Object.Destroy(shopMarkers[k].gameObject); shopMarkers.Remove(k); }
+
+            var keepCash = new HashSet<string>();
+            if (currency != null)
+            {
+                foreach (var c in currency)
+                {
+                    if (string.IsNullOrEmpty(c.id)) continue;
+                    keepCash.Add(c.id);
+                    if (!currencyMarkers.TryGetValue(c.id, out var marker))
+                    {
+                        marker = Marker(markerLayer, "Cash_" + c.id, new Color(0.2f, 1f, 0.5f, 0.95f), 8f);
+                        currencyMarkers[c.id] = marker;
+                    }
+                    marker.anchoredPosition = ToLocal(c.x, c.z);
+                    bool near = expanded || Mathf.Abs(c.x - player.x) < MiniWindowMeters * 0.7f && Mathf.Abs(c.z - player.z) < MiniWindowMeters * 0.7f;
+                    marker.gameObject.SetActive(near);
+                }
+            }
+            foreach (var k in new List<string>(currencyMarkers.Keys))
+                if (!keepCash.Contains(k)) { if (currencyMarkers[k] != null) Object.Destroy(currencyMarkers[k].gameObject); currencyMarkers.Remove(k); }
         }
     }
 
@@ -145,9 +193,11 @@ namespace Noxy.Lobby
     public sealed class BrHud : MonoBehaviour
     {
         public event Action CancelLoading, ReturnToLobby, JumpClicked, DeployClicked, RetryClicked, PickupClicked, HealClicked, ResumeClicked, LeaveClicked;
+        public event Action<string> ShopBuyClicked;
+        public event Action ShopCloseClicked;
 
         private RectTransform root, hudLayer;
-        private GameObject loadingPanel, resultsPanel, pausePanel;
+        private GameObject loadingPanel, resultsPanel, pausePanel, shopPanel;
         private Text loadingTitle, loadingMessage, loadingPercent, stageList, loadingTip;
         private Image loadingFill;
         private ButtonView cancelButton, retryButton, loadingBackButton;
@@ -156,6 +206,10 @@ namespace Noxy.Lobby
         private Text banner, flightInfo, vitalsText, ammoText, feedText, toastText, resultsText;
         private Image healthFill, armorFill, hitMarker;
         private ButtonView jumpButton, deployButton, pickupButton, healButton;
+        private Text shopTitle, shopBalance, shopHint;
+        private RectTransform shopList;
+        private ButtonView shopBuyButton;
+        private string selectedShopWeaponId = "";
         private BrMapView miniMap, fullMap;
         private readonly List<string> feed = new List<string>();
         private float toastTimer, hitTimer;
@@ -177,6 +231,7 @@ namespace Noxy.Lobby
             h.BuildLoading();
             h.BuildResults();
             h.BuildPause();
+            h.BuildShop();
             h.hudLayer.gameObject.SetActive(false);
             return h;
         }
@@ -325,10 +380,10 @@ namespace Noxy.Lobby
         public void ToggleFullMap() { if (fullMap != null) fullMap.gameObject.SetActive(!fullMap.gameObject.activeSelf); }
         public void CloseFullMap() { if (fullMap != null) fullMap.gameObject.SetActive(false); }
 
-        public void RefreshMaps(Vector3 player, float yaw, Vector3? plane, BrRouteDto route)
+        public void RefreshMaps(Vector3 player, float yaw, Vector3? plane, BrRouteDto route, List<BrShopDto> shops, List<BrCurrencyPickupDto> currency)
         {
-            if (miniMap != null) miniMap.Refresh(player, yaw, plane, route);
-            if (fullMap != null && fullMap.gameObject.activeSelf) fullMap.Refresh(player, yaw, plane, route);
+            if (miniMap != null) miniMap.Refresh(player, yaw, plane, route, shops, currency);
+            if (fullMap != null && fullMap.gameObject.activeSelf) fullMap.Refresh(player, yaw, plane, route, shops, currency);
         }
 
         public void SetPickup(string label, bool visible)
@@ -355,7 +410,7 @@ namespace Noxy.Lobby
             healthFill.rectTransform.anchorMax = new Vector2(hp, 1f);
             healthFill.color = hp > 0.5f ? UITheme.Success : hp > 0.25f ? UITheme.Warning : UITheme.Danger;
             armorFill.rectTransform.anchorMax = new Vector2(Mathf.Clamp01(you.armor / 100f), 1f);
-            vitalsText.text = "HP " + you.health + "  AR " + you.armor + "  MED " + you.medkits + "\n" + weaponLine;
+            vitalsText.text = "HP " + you.health + "  AR " + you.armor + "  MED " + you.medkits + "  COINS " + you.matchCoins + "\n" + weaponLine;
             ammoText.text = ammoLine;
         }
 
@@ -370,6 +425,46 @@ namespace Noxy.Lobby
         }
 
         public void Toast(string message, float seconds = 3f) { toastText.text = message; toastTimer = seconds; }
+
+        public bool ShopVisible => shopPanel != null && shopPanel.activeSelf;
+
+        public void ShowShop(BrShopOpenDto data)
+        {
+            if (shopPanel == null || data == null) return;
+            shopPanel.SetActive(true);
+            selectedShopWeaponId = "";
+            shopTitle.text = data.shop != null ? (data.shop.name + " - WEAPON SHOP") : "WEAPON SHOP";
+            shopBalance.text = "Balance: " + data.balance + " match coins";
+            shopHint.text = "Select a weapon to inspect and buy.";
+            UIKit.DestroyChildren(shopList);
+            foreach (var o in data.offers)
+            {
+                var offer = o;
+                var card = UIKit.NewRounded(shopList, "Offer_" + o.weaponId, UITheme.PanelLight);
+                UIKit.SetLayout(card.gameObject, preferredHeight: 96f);
+                var t = UIKit.NewText(card.transform, offer.name + "  [" + offer.category.ToUpperInvariant() + "]", UITheme.FontBody, UITheme.Text, TextAnchor.UpperLeft, FontStyle.Bold, "Name");
+                UIKit.Anchor(t.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -8f), new Vector2(-170f, 34f));
+                var s = UIKit.NewText(card.transform, "DMG " + offer.damage + "   RPM " + Mathf.RoundToInt(offer.fireRate * 60f) + "   RNG " + offer.range + "m   MAG " + offer.magazine, UITheme.FontCaption, UITheme.TextDim, TextAnchor.UpperLeft, FontStyle.Normal, "Stats");
+                UIKit.Anchor(s.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -38f), new Vector2(-170f, 26f));
+                var p = UIKit.NewText(card.transform, offer.owned ? "OWNED" : (offer.price + " COINS"), UITheme.FontCaption + 2, offer.owned ? UITheme.Success : UITheme.Warning, TextAnchor.MiddleRight, FontStyle.Bold, "Price");
+                UIKit.Anchor(p.rectTransform, new Vector2(1f, 0f), Vector2.one, new Vector2(1f, 0.5f), new Vector2(-14f, 0f), new Vector2(150f, 0f));
+                var pick = UIKit.NewButton(card.transform, "Select", "SELECT", UITheme.Button, () =>
+                {
+                    selectedShopWeaponId = offer.weaponId;
+                    shopHint.text = offer.owned ? "Already owned in this match." : $"Buy {offer.name} for {offer.price} match coins.";
+                    shopBuyButton.SetInteractable(!offer.owned);
+                }, UITheme.FontCaption + 1);
+                UIKit.Anchor(pick.Background.rectTransform, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-90f, -28f), new Vector2(130f, 40f));
+            }
+            shopBuyButton.SetInteractable(false);
+        }
+
+        public void HideShop()
+        {
+            if (shopPanel == null) return;
+            shopPanel.SetActive(false);
+            selectedShopWeaponId = "";
+        }
 
         // ---------------------------------------------------------------- results
         private void BuildResults()
@@ -396,6 +491,29 @@ namespace Noxy.Lobby
             var leave = UIKit.NewButton(pausePanel.transform, "Leave", "LEAVE MATCH", UITheme.Danger, () => LeaveClicked?.Invoke(), 30);
             UIKit.Anchor(leave.Background.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(170f, -90f), new Vector2(320f, 80f));
             pausePanel.SetActive(false);
+        }
+
+        private void BuildShop()
+        {
+            shopPanel = UIKit.NewImage(root, "ShopPanel", new Color(0.02f, 0.04f, 0.08f, 0.95f), null, true).gameObject;
+            var panel = UIKit.NewRounded(shopPanel.transform, "Panel", UITheme.Panel, true);
+            UIKit.Anchor(panel.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(980f, 660f));
+            shopTitle = UIKit.NewText(panel.transform, "WEAPON SHOP", UITheme.FontTitle, UITheme.Accent, TextAnchor.MiddleLeft, FontStyle.Bold, "Title");
+            UIKit.Anchor(shopTitle.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -10f), new Vector2(-220f, 56f));
+            shopBalance = UIKit.NewText(panel.transform, "", UITheme.FontCaption + 2, UITheme.Cyan, TextAnchor.MiddleRight, FontStyle.Bold, "Balance");
+            UIKit.Anchor(shopBalance.rectTransform, new Vector2(0f, 1f), Vector2.one, new Vector2(1f, 1f), new Vector2(0f, -10f), new Vector2(-16f, 56f));
+            var close = UIKit.NewButton(panel.transform, "Close", "CLOSE", UITheme.Button, () => { HideShop(); ShopCloseClicked?.Invoke(); }, UITheme.FontBody);
+            UIKit.Anchor(close.Background.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), Vector2.one, new Vector2(-14f, -70f), new Vector2(170f, 50f));
+
+            var scroll = UIKit.NewScroll(panel.transform, "Offers", out shopList);
+            UIKit.Anchor((RectTransform)scroll.transform, new Vector2(0f, 0f), new Vector2(1f, 1f), new Vector2(0.5f, 0.5f), new Vector2(16f, 92f), new Vector2(-16f, -130f));
+            UIKit.VStack(shopList.gameObject, 8f);
+            shopHint = UIKit.NewText(panel.transform, "", UITheme.FontCaption + 1, UITheme.TextDim, TextAnchor.MiddleLeft, FontStyle.Normal, "Hint");
+            UIKit.Anchor(shopHint.rectTransform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 0f), new Vector2(16f, 52f), new Vector2(-220f, 36f));
+            shopBuyButton = UIKit.NewButton(panel.transform, "Buy", "BUY SELECTED", UITheme.Accent, () => { if (!string.IsNullOrEmpty(selectedShopWeaponId)) ShopBuyClicked?.Invoke(selectedShopWeaponId); }, UITheme.FontBody);
+            UIKit.Anchor(shopBuyButton.Background.rectTransform, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-16f, 46f), new Vector2(190f, 60f));
+            shopBuyButton.SetInteractable(false);
+            shopPanel.SetActive(false);
         }
 
         public void ShowPause(bool visible) { if (pausePanel != null) pausePanel.SetActive(visible); }

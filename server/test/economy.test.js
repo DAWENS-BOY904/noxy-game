@@ -396,6 +396,60 @@ test('cosmetics: server-priced purchase with coins or diamonds, atomic, no doubl
   } finally { await s.close(); }
 });
 
+test('performance analytics: server-validated match stats persist, aggregate and stay idempotent', async () => {
+  const s = await server();
+  try {
+    const a = await s.register('perf_a');
+    const b = await s.register('perf_b');
+    const body = {
+      matchId: 'perf_match_01',
+      mode: 'battle_royale',
+      playerCount: 20,
+      durationSeconds: 780,
+      matchStartedAt: 1_700_000_000_000,
+      matchEndedAt: 1_700_000_780_000,
+      players: [
+        { publicId: a.me.publicId, placement: 1, kills: 7, deaths: 0, assists: 2, damageDealt: 2450, damageTaken: 980, headshots: 3, shotsFired: 120, shotsHit: 38, survivalSeconds: 780, rankPointsDelta: 26 },
+        { publicId: b.me.publicId, placement: 8, kills: 2, deaths: 1, assists: 1, damageDealt: 700, damageTaken: 1400, headshots: 0, shotsFired: 75, shotsHit: 16, survivalSeconds: 430, rankPointsDelta: -8 },
+      ],
+    };
+    const ok = await postMatch(s, body);
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.duplicate, false);
+
+    const summary = (await s.call('GET', '/api/me/performance/summary', { token: a.token })).body.summary;
+    assert.equal(summary.totalMatches, 1);
+    assert.equal(summary.totalWins, 1);
+    assert.equal(summary.totalKills, 7);
+    assert.equal(summary.totalDeaths, 0);
+    assert.equal(summary.avgDamage, 2450);
+    assert.equal(summary.avgPlacement, 1);
+    assert.equal(summary.accuracy, 38 / 120);
+    assert.equal(summary.bestMatch.matchId, 'perf_match_01');
+
+    const hist = (await s.call('GET', '/api/me/performance/history?limit=10&offset=0', { token: a.token })).body;
+    assert.equal(hist.total, 1);
+    assert.equal(hist.matches.length, 1);
+    assert.equal(hist.matches[0].headshots, 3);
+    assert.equal(hist.matches[0].rankPointsDelta, 26);
+
+    const detail = (await s.call('GET', '/api/me/performance/history/perf_match_01', { token: a.token })).body;
+    assert.equal(detail.damageTaken, 980);
+    assert.equal(detail.survivalSeconds, 780);
+
+    const trends = (await s.call('GET', '/api/me/performance/trends?limit=5', { token: a.token })).body.trends;
+    assert.equal(trends.length, 1);
+    assert.equal(trends[0].kills, 7);
+
+    // duplicate match submission must not duplicate analytics rows
+    const again = await postMatch(s, body);
+    assert.equal(again.body.duplicate, true);
+    assert.equal((await s.call('GET', '/api/me/performance/history', { token: a.token })).body.total, 1);
+    assert.equal((await s.call('GET', '/api/me/performance/history/perf_match_01', { token: b.token })).status, 200, 'each player can only view their own row');
+    assert.equal((await s.call('GET', '/api/me/performance/history/perf_match_01', { token: (await s.register('perf_c')).token })).status, 404);
+  } finally { await s.close(); }
+});
+
 test('server restart: wallet, ledger, rewards and payments persist and stay idempotent', async () => {
   const file = path.join(os.tmpdir(), `noxy-eco-${process.pid}-${Date.now()}.sqlite`);
   let a;

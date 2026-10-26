@@ -7,7 +7,7 @@ listed in [Verification](#verification). There is no dedicated game server; the 
 
 | Piece | Where | State |
 |---|---|---|
-| Match authority: queue, 10-20 player roster, 15 s cabin countdown, plane flight, jump window (opens 5 s after take-off, forced exit at the end of the route), freefall, parachute, landing, combat, loot, results | `server/src/br.js` | Implemented. 17 tests plus a C# client driving a full drop against the real server |
+| Match authority: queue, 10-20 player roster, 15 s cabin countdown, plane flight, jump window (opens 5 s after take-off, forced exit at the end of the route), freefall, parachute, landing, combat, loot, in-match currency pickups, weapon shops, results | `server/src/br.js` | Implemented. 18 tests plus a C# client driving a full drop against the real server |
 | Island: deterministic 1200 m island, 14 POIs (Mill, Factory, Clock Tower + 11 original names), roads, river, bridges, buildings, loot, landing zones | `Core/Island.cs`, `Core/IslandExport.cs`, `server/data/maps/bermuda.json` | Implemented, validated, tested |
 | Client models: DTOs, services, session/countdown logic, honest loading progress, jump kinematics, BR matchmaking, availability | `Core/BattleRoyale.cs` | Implemented, 16 + integration tests |
 | Sensitivity: mouse/touch smoothing, touch acceleration, gyro, one pipeline | `Core/Settings.cs` (`LookPipeline`), Settings screen | Implemented, tested. Gyro axis signs are **unverified on a device** |
@@ -22,10 +22,10 @@ listed in [Verification](#verification). There is no dedicated game server; the 
 4. Cabin phase (15 s): first-person walk inside a placeholder cabin with side windows; the plane flies the server's route from the server's clock. Other players appear at their server slots.
 5. Flight: **JUMP** (button or the Jump key) appears at +5 s. Forced exit at the end of the route.
 6. Freefall (steer with the move keys, camera look), parachute (**PARACHUTE** button/Jump key; opens by itself near the ground), landing. The client only proposes positions; the server validates each one and decides the landing (water landings are moved to the nearest land).
-7. Combat opens when the route ends. Shots send only a direction; the server computes hits, headshots and damage. Loot is picked up with **E** (or the on-screen button) within 2.8 m; the server picks the contents. **H** uses a medkit.
+7. Combat opens when the route ends. Shots send only a direction; the server computes hits, headshots and damage. Loot is picked up with **E** (or the on-screen button) within 2.8 m; the server picks the contents. Currency pickups and weapon-shop purchases are also validated by the server (distance, phase and duplicate-protection). **H** uses a medkit.
 8. Results: placement, eliminations, reward-processing status from the server. Spectating is **not built**.
 
-Maps: minimap (north-up, 260 m window) and full map (**M** / touch map button) show the island image, POI names, the plane route and position, and a local waypoint (click/tap the full map).
+Maps: minimap (north-up, 260 m window) and full map (**M** / touch map button) show the island image, POI names, the plane route and position, shop markers, currency pickup markers, and a local waypoint (click/tap the full map).
 
 ## Run it locally (PC)
 
@@ -56,7 +56,7 @@ PC (Editor or Windows build):
 3. Loading screen: five stages advance, percent only rises, Cancel and the failure screen (stop the backend during loading) work.
 4. Cabin: look/walk with the Settings sensitivity; windows show the sea/island. Jump is hidden until the countdown reaches "Jump!" then works with Space or the button.
 5. Freefall: steer, watch altitude/speed, open the parachute, land. The Console must not show "Position corrected by the server" in normal flight. Water landing should show the relocation message.
-6. After landing: walk, open crates (E), shoot, reload, switch weapons. With a second account verify the other player is visible and damage is applied. Press **M** for the full map and click to set a waypoint.
+6. After landing: walk, open crates (E), collect match currency, use a shop, shoot, reload, switch weapons. With a second account verify the other player is visible and damage is applied. Press **M** for the full map and click to set a waypoint.
 7. Quit mid-match from the pause menu: the text says it counts as abandoning.
 
 Android / iOS: same flow with touch controls (move stick, look drag, JUMP/PARACHUTE/PICK UP buttons, MEDKIT). Point the game at `http://<PC LAN IP>:8787` and allow the port in the firewall; the backend and phone must share a network. Check text sizes in portrait and landscape, safe areas, and the gyro toggle in Settings (axis signs may need flipping: `LookPipeline.GyroSignYaw/Pitch`).
@@ -64,7 +64,7 @@ Android / iOS: same flow with touch controls (move stick, look drag, JUMP/PARACH
 ## Verification
 
 Verified by automated tests:
-- Server rules over real HTTP with simulated players: roster policy, cancellation, phases and timestamps, jump window and forced exit, freefall/parachute limits, landing and water relocation, damage/headshots/armor, fire-rate and ammo, loot uniqueness and range, interest management, disconnect and abandon handling, results and idempotent reward processing (`server/test/br.test.js`, backend suite 114/114).
+- Server rules over real HTTP with simulated players: roster policy, cancellation, phases and timestamps, jump window and forced exit, freefall/parachute limits, landing and water relocation, damage/headshots/armor, fire-rate and ammo, loot uniqueness and range, server-authoritative currency pickups and shop purchases, interest management, disconnect and abandon handling, results and idempotent reward processing (`server/test/br.test.js`, backend suite 115/115).
 - The generated island is valid (land share, POI spacing, reachable loot, bridges, landing zones) and the server's copy is fresh (`MapExportTests`). The server's coarse terrain agrees with the client's fine terrain to a median of 0.05 m, p99 1.38 m, worst 11 m.
 - `JumpModel` was checked against the real server: 77 validated moves over a full drop in about 10 s, no rejections, landing on a landing pad (`BattleRoyaleIntegrationTests`). Core suite 222/222.
 - Architecture guards: sensitivity is applied in exactly one place.

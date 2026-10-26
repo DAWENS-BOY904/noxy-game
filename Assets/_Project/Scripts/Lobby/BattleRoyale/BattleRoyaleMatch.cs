@@ -19,6 +19,7 @@ namespace Noxy.Lobby
         public const string LobbySceneName = "MainLobby";
         private const float GroundMoveInterval = 0.12f;
         private const float PickupRange = 2.8f;
+        private const float ShopRange = 4.5f;
         private const float StaleAirStateSeconds = 1.5f;
 
         private sealed class Pending<T> where T : class
@@ -53,6 +54,11 @@ namespace Noxy.Lobby
         private float pollTimer, groundTimer, lastFireAt, lastSwitchAt, landedAt = -100f, networkTrouble;
         private Vector3 lastGroundPos;
         private LootSpawn nearbyLoot;
+        private BrShopDto nearbyShop;
+        private BrCurrencyPickupDto nearbyCurrency;
+        private string openShopId;
+        private readonly Dictionary<string, GameObject> shopVisuals = new Dictionary<string, GameObject>();
+        private readonly Dictionary<string, GameObject> currencyVisuals = new Dictionary<string, GameObject>();
 
         private static long NowMs() => (long)(Time.realtimeSinceStartup * 1000f);
         private static float Now() => Time.realtimeSinceStartup;
@@ -96,6 +102,8 @@ namespace Noxy.Lobby
             hud.DeployClicked += () => air?.TryDeploy();
             hud.PickupClicked += TryPickup;
             hud.HealClicked += TryHeal;
+            hud.ShopBuyClicked += TryBuyFromShop;
+            hud.ShopCloseClicked += () => openShopId = null;
             hud.ResumeClicked += () => SetPaused(false);
             hud.LeaveClicked += LeaveToLobby;
             hud.BindLoading(loading);
@@ -293,13 +301,15 @@ namespace Noxy.Lobby
             var keys = AppServices.Config.Bindings;
             if (InputCompat.KeyDown(keys.Get(GameAction.Pause)) || InputCompat.BackPressed)
             {
-                if (hud.FullMapOpen) hud.CloseFullMap(); else SetPaused(!paused);
+                if (hud.FullMapOpen) hud.CloseFullMap();
+                else if (hud.ShopVisible) { hud.HideShop(); openShopId = null; }
+                else SetPaused(!paused);
             }
             if (!paused && (InputCompat.KeyDown(keys.Get(GameAction.Map)) || (touchHud != null && touchHud.State.ConsumeMap()))) hud.ToggleFullMap();
-            if (!paused && InputCompat.KeyDown(keys.Get(GameAction.Interact)) && nearbyLoot != null) TryPickup();
+            if (!paused && !hud.ShopVisible && !hud.FullMapOpen && InputCompat.KeyDown(keys.Get(GameAction.Interact))) TryInteract();
             if (!paused && InputCompat.KeyDown(KeyCode.H)) TryHeal();
 
-            bool uiOpen = paused || hud.FullMapOpen || finished;
+            bool uiOpen = paused || hud.FullMapOpen || hud.ShopVisible || finished;
             player.InputEnabled = !uiOpen;
             air.InputEnabled = !uiOpen;
             ApplyCursor(uiOpen);
@@ -357,7 +367,7 @@ namespace Noxy.Lobby
 
         private void UpdateGround(float dt)
         {
-            if (air.Mode != AirMode.None || session.Last == null || session.Last.you.state != "landed") { UpdateLootPrompt(false); return; }
+            if (air.Mode != AirMode.None || session.Last == null || session.Last.you.state != "landed") { UpdateInteractPrompt(false); return; }
             var pos = player.transform.position;
             groundTimer += dt;
             if (groundTimer >= GroundMoveInterval && !moveInFlight)
@@ -371,23 +381,60 @@ namespace Noxy.Lobby
                     if (!r.Ok && !r.NetworkError && r.Code != "match_over") { resyncWanted = true; pollTimer = 99f; }
                 });
             }
-            UpdateLootPrompt(true);
+            UpdateInteractPrompt(true);
         }
 
-        private void UpdateLootPrompt(bool active)
+        private void UpdateInteractPrompt(bool active)
         {
-            nearbyLoot = null;
-            if (active && layout != null)
+            nearbyLoot = null; nearbyShop = null; nearbyCurrency = null;
+            if (active)
             {
-                var p = player.transform.position; float best = PickupRange * PickupRange;
-                foreach (var l in layout.Loot)
+                var p = player.transform.position;
+                float bestShop = ShopRange * ShopRange;
+                var s = session.Last;
+                if (s != null && s.shops != null)
                 {
-                    if (pickedLoot.Contains(l.Id) || Mathf.Abs(l.Y - p.y) > 3f) continue;
-                    float dx = l.X - p.x, dz = l.Z - p.z, d = dx * dx + dz * dz;
-                    if (d < best) { best = d; nearbyLoot = l; }
+                    foreach (var shop in s.shops)
+                    {
+                        float dx = shop.x - p.x, dz = shop.z - p.z, d = dx * dx + dz * dz;
+                        if (d < bestShop) { bestShop = d; nearbyShop = shop; }
+                    }
+                }
+
+                float bestCash = PickupRange * PickupRange;
+                if (s != null && s.currency != null)
+                {
+                    foreach (var c in s.currency)
+                    {
+                        float dx = c.x - p.x, dz = c.z - p.z, d = dx * dx + dz * dz;
+                        if (d < bestCash) { bestCash = d; nearbyCurrency = c; }
+                    }
+                }
+
+                if (layout != null)
+                {
+                    float bestLoot = PickupRange * PickupRange;
+                    foreach (var l in layout.Loot)
+                    {
+                        if (pickedLoot.Contains(l.Id) || Mathf.Abs(l.Y - p.y) > 3f) continue;
+                        float dx = l.X - p.x, dz = l.Z - p.z, d = dx * dx + dz * dz;
+                        if (d < bestLoot) { bestLoot = d; nearbyLoot = l; }
+                    }
                 }
             }
-            hud.SetPickup(nearbyLoot != null ? "OPEN " + nearbyLoot.Kind.ToUpperInvariant() + "  [" + AppServices.Config.Bindings.Get(GameAction.Interact) + "]" : "", nearbyLoot != null && !finished);
+            string key = AppServices.Config.Bindings.Get(GameAction.Interact).ToString();
+            bool show = !finished && !hud.ShopVisible;
+            if (nearbyShop != null) hud.SetPickup("SHOP  [" + key + "]", show);
+            else if (nearbyCurrency != null) hud.SetPickup("PICK UP COINS  [" + key + "]", show);
+            else if (nearbyLoot != null) hud.SetPickup("OPEN " + nearbyLoot.Kind.ToUpperInvariant() + "  [" + key + "]", show);
+            else hud.SetPickup("", false);
+        }
+
+        private void TryInteract()
+        {
+            if (nearbyShop != null) { OpenShop(nearbyShop); return; }
+            if (nearbyCurrency != null) { TryPickupCurrency(); return; }
+            if (nearbyLoot != null) TryPickup();
         }
 
         private void UpdateHud()
@@ -421,7 +468,7 @@ namespace Noxy.Lobby
             Vector3 where = air.Mode == AirMode.Cabin && plane != null ? plane.transform.position : player.transform.position;
             Vector3? planePos = plane != null && plane.gameObject.activeSelf ? plane.transform.position : (Vector3?)null;
             float yaw = air.Mode == AirMode.None ? player.Yaw : air.Yaw;
-            hud.RefreshMaps(where, yaw, planePos, s.route);
+            hud.RefreshMaps(where, yaw, planePos, s.route, s.shops, s.currency);
         }
 
         // ---------------------------------------------------------------- server state -> scene
@@ -431,6 +478,7 @@ namespace Noxy.Lobby
             if (s == null || !ready) return;
             var you = s.you;
             SyncRemotes(s);
+            SyncWorldMarkers(s);
             foreach (var e in session.TakeEvents()) HandleEvent(e);
 
             bool recentlyLanded = Time.time - landedAt < StaleAirStateSeconds;
@@ -456,7 +504,7 @@ namespace Noxy.Lobby
 
             Mirror(you);
 
-            if (!finished && (session.Phase == BrPhase.Ended || session.Phase == BrPhase.Cancelled || you.state == "eliminated")) ShowEnd();
+            if (!finished && (session.Phase == BrPhase.Ended || session.Phase == BrPhase.Cancelled || you.state == "eliminated")) { hud.HideShop(); ShowEnd(); }
         }
 
         private void OnLanded(Vector3 pos, float yaw, bool relocated)
@@ -482,6 +530,73 @@ namespace Noxy.Lobby
             List<string> gone = null;
             foreach (var kv in remotes) if (!seen.Contains(kv.Key)) (gone ?? (gone = new List<string>())).Add(kv.Key);
             if (gone != null) foreach (var id in gone) { if (remotes[id] != null) Destroy(remotes[id].gameObject); remotes.Remove(id); }
+        }
+
+        private void SyncWorldMarkers(BrStateDto s)
+        {
+            if (s == null) return;
+            var keepShops = new HashSet<string>();
+            if (s.shops != null) foreach (var shop in s.shops)
+            {
+                if (string.IsNullOrEmpty(shop.id)) continue;
+                keepShops.Add(shop.id);
+                if (!shopVisuals.ContainsKey(shop.id)) shopVisuals[shop.id] = CreateShopVisual(shop);
+            }
+            foreach (var id in new List<string>(shopVisuals.Keys))
+                if (!keepShops.Contains(id)) { if (shopVisuals[id] != null) Destroy(shopVisuals[id]); shopVisuals.Remove(id); }
+
+            var keepCash = new HashSet<string>();
+            if (s.currency != null) foreach (var c in s.currency)
+            {
+                if (string.IsNullOrEmpty(c.id)) continue;
+                keepCash.Add(c.id);
+                if (!currencyVisuals.ContainsKey(c.id)) currencyVisuals[c.id] = CreateCurrencyVisual(c);
+            }
+            foreach (var id in new List<string>(currencyVisuals.Keys))
+                if (!keepCash.Contains(id)) { if (currencyVisuals[id] != null) Destroy(currencyVisuals[id]); currencyVisuals.Remove(id); }
+        }
+
+        private GameObject CreateShopVisual(BrShopDto shop)
+        {
+            var root = new GameObject("Shop_" + shop.id);
+            root.transform.SetParent(transform, false);
+            root.transform.position = new Vector3(shop.x, shop.y, shop.z);
+            var baseBox = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            baseBox.name = "Body";
+            baseBox.transform.SetParent(root.transform, false);
+            baseBox.transform.localScale = new Vector3(5f, 3f, 4f);
+            baseBox.transform.localPosition = new Vector3(0f, 1.5f, 0f);
+            baseBox.GetComponent<Renderer>().sharedMaterial = MaterialFactory.Lit(new Color(0.18f, 0.2f, 0.24f), 0f, 0.1f);
+            var roof = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            roof.name = "Roof";
+            roof.transform.SetParent(root.transform, false);
+            roof.transform.localScale = new Vector3(5.6f, 0.4f, 4.6f);
+            roof.transform.localPosition = new Vector3(0f, 3.2f, 0f);
+            roof.GetComponent<Renderer>().sharedMaterial = MaterialFactory.Lit(new Color(0.92f, 0.68f, 0.2f), 0f, 0.1f);
+            var sign = new GameObject("Sign");
+            sign.transform.SetParent(root.transform, false);
+            sign.transform.localPosition = new Vector3(0f, 4.2f, 0f);
+            var tm = sign.AddComponent<TextMesh>();
+            tm.text = "WEAPON SHOP";
+            tm.characterSize = 0.18f;
+            tm.fontSize = 64;
+            tm.color = new Color(1f, 0.9f, 0.5f);
+            tm.anchor = TextAnchor.MiddleCenter;
+            tm.alignment = TextAlignment.Center;
+            sign.AddComponent<ShopBillboard>();
+            return root;
+        }
+
+        private GameObject CreateCurrencyVisual(BrCurrencyPickupDto c)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            go.name = "Cash_" + c.id;
+            go.transform.SetParent(transform, false);
+            go.transform.position = new Vector3(c.x, c.y + 0.35f, c.z);
+            go.transform.localScale = new Vector3(0.4f, 0.08f, 0.4f);
+            go.GetComponent<Renderer>().sharedMaterial = MaterialFactory.Lit(new Color(0.18f, 0.9f, 0.45f), 0f, 0.2f);
+            go.AddComponent<PickupBob>();
+            return go;
         }
 
         private void HandleEvent(BrEventDto e)
@@ -575,6 +690,46 @@ namespace Noxy.Lobby
             });
         }
 
+        private void TryPickupCurrency()
+        {
+            if (nearbyCurrency == null) return;
+            var pick = nearbyCurrency;
+            svc.PickupCurrency(pick.id, r =>
+            {
+                if (r.Ok)
+                {
+                    hud.Toast("+" + r.Value.amount + " match coins", 1.6f);
+                    pollTimer = 99f;
+                }
+                else hud.Toast(r.Friendly, 1.8f);
+            });
+        }
+
+        private void OpenShop(BrShopDto shop)
+        {
+            if (shop == null || string.IsNullOrEmpty(shop.id)) return;
+            svc.OpenShop(shop.id, r =>
+            {
+                if (!r.Ok) { hud.Toast(r.Friendly, 1.8f); return; }
+                openShopId = shop.id;
+                hud.ShowShop(r.Value);
+            });
+        }
+
+        private void TryBuyFromShop(string weaponId)
+        {
+            if (string.IsNullOrEmpty(openShopId) || string.IsNullOrEmpty(weaponId)) return;
+            string req = Guid.NewGuid().ToString("N");
+            svc.BuyShopItem(openShopId, weaponId, req, r =>
+            {
+                if (!r.Ok) { hud.Toast(r.Friendly, 2f); return; }
+                if (r.Value != null && r.Value.you != null) Mirror(r.Value.you);
+                hud.Toast(r.Value != null && r.Value.duplicate ? "Purchase already processed." : "Purchased " + weaponId.Replace('_', ' '), 1.8f);
+                svc.OpenShop(openShopId, o => { if (o.Ok) hud.ShowShop(o.Value); });
+                pollTimer = 99f;
+            });
+        }
+
         private void TryHeal()
         {
             if (air.Mode != AirMode.None || session.Last == null || session.Last.you.medkits <= 0) return;
@@ -606,6 +761,30 @@ namespace Noxy.Lobby
                 else sb.AppendLine("The match is still running. Spectating is not built yet.");
             }
             hud.ShowResults(sb.ToString());
+        }
+    }
+
+    internal sealed class PickupBob : MonoBehaviour
+    {
+        private Vector3 basePos;
+        private void Awake() => basePos = transform.position;
+        private void Update()
+        {
+            float t = Time.time;
+            transform.position = basePos + new Vector3(0f, Mathf.Sin(t * 3f) * 0.15f, 0f);
+            transform.Rotate(0f, 60f * Time.deltaTime, 0f, Space.World);
+        }
+    }
+
+    internal sealed class ShopBillboard : MonoBehaviour
+    {
+        private void LateUpdate()
+        {
+            if (Camera.main == null) return;
+            Vector3 c = Camera.main.transform.position;
+            Vector3 f = c - transform.position;
+            if (f.sqrMagnitude < 0.01f) return;
+            transform.rotation = Quaternion.LookRotation(f.normalized, Vector3.up);
         }
     }
 }

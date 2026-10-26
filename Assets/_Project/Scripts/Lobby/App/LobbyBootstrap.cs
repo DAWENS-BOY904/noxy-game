@@ -75,6 +75,7 @@ namespace Noxy.Lobby
             screens.Register(LobbyScreen.Create<InvitationsScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<MissionsScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<RewardsScreen>(ctx, safeRoot));
+            screens.Register(LobbyScreen.Create<PerformanceScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<ShopScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<SettingsScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<HudEditorScreen>(ctx, safeRoot));

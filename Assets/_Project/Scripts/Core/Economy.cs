@@ -46,6 +46,33 @@ namespace Noxy.Core
     }
     [Serializable] public sealed class MatchRewardsDto { public List<MatchRewardDto> matches = new List<MatchRewardDto>(); }
 
+    [Serializable] public sealed class PerformanceMatchDto
+    {
+        public string matchId = "", mode = "";
+        public int playerCount, durationSeconds, placement, kills, deaths, assists, damageDealt, damageTaken, headshots, shotsFired, shotsHit, survivalSeconds, rewardsCoins, rewardsDiamonds, rankPointsDelta;
+        public bool booyah;
+        public float accuracy, headshotRate;
+        public long startedAt, endedAt, createdAt;
+    }
+    [Serializable] public sealed class PerformanceBestMatchDto
+    {
+        public string matchId = "", mode = "";
+        public int placement, kills, deaths, assists, damageDealt, headshots, survivalSeconds, rewardsCoins, rewardsDiamonds;
+        public bool booyah;
+        public float accuracy;
+        public long createdAt;
+    }
+    [Serializable] public sealed class PerformanceSummaryDto
+    {
+        public int totalMatches, totalWins, totalKills, totalDeaths, headshots, totalBooyahs, totalAssists, rankPoints;
+        public float winRate, kd, avgDamage, avgSurvivalSeconds, avgPlacement, headshotRate, accuracy;
+        public PerformanceBestMatchDto bestMatch = new PerformanceBestMatchDto();
+    }
+    [Serializable] public sealed class PerformanceSummaryEnvelopeDto { public string mode = "", scope = ""; public PerformanceSummaryDto summary = new PerformanceSummaryDto(); }
+    [Serializable] public sealed class PerformanceHistoryDto { public int total, offset, limit; public List<PerformanceMatchDto> matches = new List<PerformanceMatchDto>(); }
+    [Serializable] public sealed class PerformanceTrendPointDto { public int index, kills, damageDealt, placement; public bool win; public float winRate; public long at; public string matchId = ""; public int survivalSeconds; }
+    [Serializable] public sealed class PerformanceTrendsDto { public string mode = ""; public int window; public List<PerformanceTrendPointDto> trends = new List<PerformanceTrendPointDto>(); }
+
     [Serializable] public sealed class CosmeticOfferDto
     {
         public string itemId = "", slot = "", name = "", rarity = "";
@@ -136,6 +163,10 @@ namespace Noxy.Core
         void ReportTrainingResult(int score, Action<ApiResult<ClaimDto>> done);
         void LoadRecentMatches(Action<ApiResult<MatchRewardsDto>> done);
         void LoadMatchRewards(string matchId, Action<ApiResult<MatchRewardDto>> done);
+        void LoadPerformanceSummary(string mode, bool recentOnly, int limit, Action<ApiResult<PerformanceSummaryEnvelopeDto>> done);
+        void LoadPerformanceHistory(string mode, int limit, int offset, Action<ApiResult<PerformanceHistoryDto>> done);
+        void LoadPerformanceMatch(string matchId, Action<ApiResult<PerformanceMatchDto>> done);
+        void LoadPerformanceTrends(string mode, int limit, Action<ApiResult<PerformanceTrendsDto>> done);
         void LoadCosmetics(Action<ApiResult<CosmeticOffersDto>> done);
         void BuyCosmetic(string itemId, string currency, Action<ApiResult<CosmeticPurchaseDto>> done);
         void LoadAdsStatus(Action<ApiResult<AdsStatusDto>> done);
@@ -163,6 +194,10 @@ namespace Noxy.Core
         public void ReportTrainingResult(int score, Action<ApiResult<ClaimDto>> done) => Fail(done);
         public void LoadRecentMatches(Action<ApiResult<MatchRewardsDto>> done) => Fail(done);
         public void LoadMatchRewards(string matchId, Action<ApiResult<MatchRewardDto>> done) => Fail(done);
+        public void LoadPerformanceSummary(string mode, bool recentOnly, int limit, Action<ApiResult<PerformanceSummaryEnvelopeDto>> done) => Fail(done);
+        public void LoadPerformanceHistory(string mode, int limit, int offset, Action<ApiResult<PerformanceHistoryDto>> done) => Fail(done);
+        public void LoadPerformanceMatch(string matchId, Action<ApiResult<PerformanceMatchDto>> done) => Fail(done);
+        public void LoadPerformanceTrends(string mode, int limit, Action<ApiResult<PerformanceTrendsDto>> done) => Fail(done);
         public void LoadCosmetics(Action<ApiResult<CosmeticOffersDto>> done) => Fail(done);
         public void BuyCosmetic(string itemId, string currency, Action<ApiResult<CosmeticPurchaseDto>> done) => Fail(done);
         public void LoadAdsStatus(Action<ApiResult<AdsStatusDto>> done) => Fail(done);
@@ -237,6 +272,30 @@ namespace Noxy.Core
 
         public void LoadMatchRewards(string matchId, Action<ApiResult<MatchRewardDto>> done) =>
             Call("GET", "/api/me/matches/" + Uri.EscapeDataString(matchId) + "/rewards", null, done, m => m.wallet);
+
+        public void LoadPerformanceSummary(string mode, bool recentOnly, int limit, Action<ApiResult<PerformanceSummaryEnvelopeDto>> done)
+        {
+            string path = "/api/me/performance/summary?scope=" + (recentOnly ? "recent" : "all") + "&limit=" + Math.Max(1, limit);
+            if (!string.IsNullOrEmpty(mode)) path += "&mode=" + Uri.EscapeDataString(mode);
+            Call("GET", path, null, done);
+        }
+
+        public void LoadPerformanceHistory(string mode, int limit, int offset, Action<ApiResult<PerformanceHistoryDto>> done)
+        {
+            string path = "/api/me/performance/history?limit=" + Math.Max(1, limit) + "&offset=" + Math.Max(0, offset);
+            if (!string.IsNullOrEmpty(mode)) path += "&mode=" + Uri.EscapeDataString(mode);
+            Call("GET", path, null, done);
+        }
+
+        public void LoadPerformanceMatch(string matchId, Action<ApiResult<PerformanceMatchDto>> done) =>
+            Call("GET", "/api/me/performance/history/" + Uri.EscapeDataString(matchId), null, done);
+
+        public void LoadPerformanceTrends(string mode, int limit, Action<ApiResult<PerformanceTrendsDto>> done)
+        {
+            string path = "/api/me/performance/trends?limit=" + Math.Max(1, limit);
+            if (!string.IsNullOrEmpty(mode)) path += "&mode=" + Uri.EscapeDataString(mode);
+            Call("GET", path, null, done);
+        }
 
         public void LoadCosmetics(Action<ApiResult<CosmeticOffersDto>> done) => Call("GET", "/api/store/cosmetics", null, done);
 

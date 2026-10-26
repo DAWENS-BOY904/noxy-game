@@ -129,6 +129,33 @@ CREATE TABLE IF NOT EXISTS match_rewards (
   created_at INTEGER NOT NULL,
   UNIQUE (match_id, player_id)
 );
+CREATE TABLE IF NOT EXISTS match_performance (
+  match_id TEXT NOT NULL,
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  mode TEXT NOT NULL,
+  player_count INTEGER NOT NULL CHECK (player_count >= 1 AND player_count <= 200),
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER NOT NULL,
+  duration_seconds INTEGER NOT NULL CHECK (duration_seconds >= 0 AND duration_seconds <= 7200),
+  placement INTEGER NOT NULL CHECK (placement >= 1 AND placement <= 200),
+  kills INTEGER NOT NULL DEFAULT 0 CHECK (kills >= 0 AND kills <= 100),
+  deaths INTEGER NOT NULL DEFAULT 0 CHECK (deaths >= 0 AND deaths <= 20),
+  assists INTEGER NOT NULL DEFAULT 0 CHECK (assists >= 0 AND assists <= 100),
+  damage_dealt INTEGER NOT NULL DEFAULT 0 CHECK (damage_dealt >= 0 AND damage_dealt <= 200000),
+  damage_taken INTEGER NOT NULL DEFAULT 0 CHECK (damage_taken >= 0 AND damage_taken <= 200000),
+  headshots INTEGER NOT NULL DEFAULT 0 CHECK (headshots >= 0 AND headshots <= 100),
+  shots_fired INTEGER NOT NULL DEFAULT 0 CHECK (shots_fired >= 0 AND shots_fired <= 20000),
+  shots_hit INTEGER NOT NULL DEFAULT 0 CHECK (shots_hit >= 0 AND shots_hit <= 20000),
+  survival_seconds INTEGER NOT NULL DEFAULT 0 CHECK (survival_seconds >= 0 AND survival_seconds <= 7200),
+  rewards_coins INTEGER NOT NULL DEFAULT 0,
+  rewards_diamonds INTEGER NOT NULL DEFAULT 0,
+  rank_points_delta INTEGER NOT NULL DEFAULT 0,
+  booyah INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (match_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_perf_player_time ON match_performance(player_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_perf_player_mode_time ON match_performance(player_id, mode, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS daily_missions (
   id TEXT PRIMARY KEY,
@@ -303,9 +330,18 @@ function create(ctx) {
     if (!/^[A-Za-z0-9_-]+$/.test(matchId)) fail(400, 'invalid_matchId', 'matchId has invalid characters.');
     const mode = requireString(body.mode, 'mode', 2, 32);
     const playerCount = body.playerCount, duration = body.durationSeconds;
+    const startedAt = Number.isInteger(body.matchStartedAt) ? body.matchStartedAt : now() - duration * 1000;
+    const endedAt = Number.isInteger(body.matchEndedAt) ? body.matchEndedAt : now();
+    if (!Number.isInteger(startedAt) || !Number.isInteger(endedAt) || startedAt < 0 || endedAt < startedAt)
+      fail(400, 'invalid_match_time', 'matchStartedAt/matchEndedAt are invalid.');
     if (!Number.isInteger(playerCount) || playerCount < 1 || playerCount > 200) fail(400, 'invalid_playerCount', 'playerCount must be 1-200.');
     if (!Number.isInteger(duration) || duration < 0 || duration > 7200) fail(400, 'invalid_duration', 'durationSeconds must be 0-7200.');
     if (!Array.isArray(body.players) || body.players.length < 1 || body.players.length > 200) fail(400, 'invalid_players', 'players must be a list of 1-200 entries.');
+    const intField = (entry, key, min, max, fallback = 0) => {
+      if (entry[key] === undefined || entry[key] === null) return fallback;
+      if (!Number.isInteger(entry[key]) || entry[key] < min || entry[key] > max) fail(400, `invalid_${key}`, `${key} must be ${min}-${max}.`);
+      return entry[key];
+    };
     const seen = new Set();
     const roster = body.players.map(e => {
       const p = e && playerByPublicId(e.publicId);
@@ -314,7 +350,20 @@ function create(ctx) {
       seen.add(p.id);
       if (!Number.isInteger(e.placement) || e.placement < 1 || e.placement > 200) fail(400, 'invalid_placement', 'placement must be 1-200.');
       if (!Number.isInteger(e.kills) || e.kills < 0 || e.kills > 100) fail(400, 'invalid_kills', 'kills must be 0-100.');
-      return { p, placement: e.placement, kills: e.kills };
+      const stats = {
+        deaths: intField(e, 'deaths', 0, 20, e.placement === 1 ? 0 : 1),
+        assists: intField(e, 'assists', 0, 100, 0),
+        damageDealt: intField(e, 'damageDealt', 0, 200000, 0),
+        damageTaken: intField(e, 'damageTaken', 0, 200000, 0),
+        headshots: intField(e, 'headshots', 0, 100, 0),
+        shotsFired: intField(e, 'shotsFired', 0, 20000, 0),
+        shotsHit: intField(e, 'shotsHit', 0, 20000, 0),
+        survivalSeconds: intField(e, 'survivalSeconds', 0, 7200, duration),
+        rankPointsDelta: intField(e, 'rankPointsDelta', -5000, 5000, 0),
+      };
+      if (stats.shotsHit > stats.shotsFired) fail(400, 'invalid_accuracy', 'shotsHit cannot exceed shotsFired.');
+      if (stats.headshots > stats.shotsHit) fail(400, 'invalid_headshots', 'headshots cannot exceed shotsHit.');
+      return { p, placement: e.placement, kills: e.kills, stats };
     });
     if (roster.length > playerCount) fail(400, 'invalid_players', 'More players listed than playerCount.');
 
@@ -325,7 +374,7 @@ function create(ctx) {
       const booyahOn = setting('booyah_enabled') === '1' && eligibleModes.includes(mode)
         && playerCount >= num('booyah_min_players') && duration >= num('booyah_min_match_seconds');
       const out = [];
-      for (const { p, placement, kills } of roster) {
+      for (const { p, placement, kills, stats } of roster) {
         const lines = [];
         let coins = 0;
         const part = num('match_participation_coins'); if (part > 0) lines.push({ label: 'Match played', coins: part });
@@ -349,10 +398,20 @@ function create(ctx) {
             diamonds = amount; status = 'granted';
           }
         }
+        const when = now();
         q.run('INSERT INTO match_rewards(match_id, player_id, placement, kills, coins, booyah_diamonds, status, reason, breakdown, coin_txn_id, diamond_txn_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-          matchId, p.id, placement, kills, coins, diamonds, status, reason, JSON.stringify(lines), coinTxn, diamondTxn, now());
+          matchId, p.id, placement, kills, coins, diamonds, status, reason, JSON.stringify(lines), coinTxn, diamondTxn, when);
+        q.run(`INSERT INTO match_performance(
+          match_id, player_id, mode, player_count, started_at, ended_at, duration_seconds, placement, kills, deaths, assists,
+          damage_dealt, damage_taken, headshots, shots_fired, shots_hit, survival_seconds, rewards_coins, rewards_diamonds,
+          rank_points_delta, booyah, created_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        matchId, p.id, mode, playerCount, startedAt, endedAt, duration, placement, kills, stats.deaths, stats.assists,
+        stats.damageDealt, stats.damageTaken, stats.headshots, stats.shotsFired, stats.shotsHit, Math.min(duration, stats.survivalSeconds),
+        coins, diamonds, stats.rankPointsDelta, won ? 1 : 0, when);
 
-        q.run('UPDATE player_statistics SET matches = matches + 1, wins = wins + ?, top3 = top3 + ?, kills = kills + ? WHERE player_id = ?', won ? 1 : 0, placement <= 3 ? 1 : 0, kills, p.id);
+        q.run('UPDATE player_statistics SET matches = matches + 1, wins = wins + ?, top3 = top3 + ?, kills = kills + ?, deaths = deaths + ?, headshots = headshots + ?, seconds_played = seconds_played + ? WHERE player_id = ?',
+          won ? 1 : 0, placement <= 3 ? 1 : 0, kills, stats.deaths, stats.headshots, Math.min(duration, stats.survivalSeconds), p.id);
         addProgress(p.id, 'matches_played', 1); addProgress(p.id, 'kills', kills); if (won) addProgress(p.id, 'wins', 1);
         if (diamonds > 0) notify(p.id, 'reward', 'Booyah!', `You received ${diamonds} diamonds (in-game promotional reward).`);
         out.push({ publicId: p.public_id, coins, booyahDiamonds: diamonds, status });
@@ -366,6 +425,78 @@ function create(ctx) {
       matchId: r.match_id, placement: r.placement, kills: r.kills, coins: r.coins, booyahDiamonds: r.booyah_diamonds,
       booyah: r.booyah_diamonds > 0, status: r.status, reason: r.reason, breakdown: JSON.parse(r.breakdown), createdAt: r.created_at,
       notice: 'The Booyah bonus is an in-game promotional reward subject to published eligibility rules. It has no cash value and cannot be withdrawn.',
+    };
+  }
+
+  function parsePerfFilter(query) {
+    const mode = String(query.get('mode') || '').trim();
+    const scope = String(query.get('scope') || 'all').trim().toLowerCase();
+    const limit = Math.min(100, Math.max(1, Number.parseInt(query.get('limit') || '30', 10) || 30));
+    const offset = Math.max(0, Number.parseInt(query.get('offset') || '0', 10) || 0);
+    return { mode: mode.length > 0 ? mode : null, scope: scope === 'recent' ? 'recent' : 'all', limit, offset };
+  }
+
+  function loadPerformanceRows(playerId, filter, includeOffset = false) {
+    const where = ['player_id = ?'];
+    const args = [playerId];
+    if (filter.mode) { where.push('mode = ?'); args.push(filter.mode); }
+    let sql = `SELECT * FROM match_performance WHERE ${where.join(' AND ')} ORDER BY created_at DESC`;
+    if (filter.scope === 'recent') sql += ' LIMIT ?';
+    else if (includeOffset) sql += ' LIMIT ? OFFSET ?';
+    if (filter.scope === 'recent') args.push(filter.limit);
+    else if (includeOffset) args.push(filter.limit, filter.offset);
+    return q.all(sql, ...args);
+  }
+
+  function performanceSummary(rows) {
+    if (rows.length === 0) {
+      return {
+        totalMatches: 0, totalWins: 0, winRate: 0, totalKills: 0, totalDeaths: 0, kd: 0,
+        avgDamage: 0, avgSurvivalSeconds: 0, avgPlacement: 0, headshots: 0, headshotRate: 0, accuracy: 0,
+        totalBooyahs: 0, totalAssists: 0, rankPoints: 0, bestMatch: null,
+      };
+    }
+    let wins = 0, kills = 0, deaths = 0, assists = 0, damage = 0, survival = 0, placement = 0, headshots = 0, fired = 0, hit = 0, booyahs = 0, rankPoints = 0;
+    let best = null, bestScore = -1;
+    for (const r of rows) {
+      wins += r.placement === 1 ? 1 : 0;
+      kills += r.kills; deaths += r.deaths; assists += r.assists; damage += r.damage_dealt; survival += r.survival_seconds;
+      placement += r.placement; headshots += r.headshots; fired += r.shots_fired; hit += r.shots_hit; booyahs += r.booyah ? 1 : 0; rankPoints += r.rank_points_delta;
+      const score = r.kills * 300 + r.assists * 120 + r.damage_dealt + (r.placement === 1 ? 1200 : Math.max(0, 300 - r.placement * 8));
+      if (score > bestScore) { bestScore = score; best = r; }
+    }
+    return {
+      totalMatches: rows.length,
+      totalWins: wins,
+      winRate: wins / rows.length,
+      totalKills: kills,
+      totalDeaths: deaths,
+      kd: deaths === 0 ? kills : kills / deaths,
+      avgDamage: damage / rows.length,
+      avgSurvivalSeconds: survival / rows.length,
+      avgPlacement: placement / rows.length,
+      headshots,
+      headshotRate: kills === 0 ? 0 : headshots / kills,
+      accuracy: fired === 0 ? 0 : hit / fired,
+      totalBooyahs: booyahs,
+      totalAssists: assists,
+      rankPoints,
+      bestMatch: best ? {
+        matchId: best.match_id, mode: best.mode, placement: best.placement, kills: best.kills, deaths: best.deaths, assists: best.assists,
+        damageDealt: best.damage_dealt, headshots: best.headshots, accuracy: best.shots_fired > 0 ? best.shots_hit / best.shots_fired : 0,
+        survivalSeconds: best.survival_seconds, rewardsCoins: best.rewards_coins, rewardsDiamonds: best.rewards_diamonds, booyah: !!best.booyah, createdAt: best.created_at,
+      } : null,
+    };
+  }
+
+  function performanceRowView(r) {
+    return {
+      matchId: r.match_id, mode: r.mode, playerCount: r.player_count, startedAt: r.started_at, endedAt: r.ended_at, createdAt: r.created_at,
+      durationSeconds: r.duration_seconds, placement: r.placement, kills: r.kills, deaths: r.deaths, assists: r.assists,
+      damageDealt: r.damage_dealt, damageTaken: r.damage_taken, headshots: r.headshots, shotsFired: r.shots_fired, shotsHit: r.shots_hit,
+      accuracy: r.shots_fired > 0 ? r.shots_hit / r.shots_fired : 0, headshotRate: r.kills > 0 ? r.headshots / r.kills : 0,
+      survivalSeconds: r.survival_seconds, rewardsCoins: r.rewards_coins, rewardsDiamonds: r.rewards_diamonds, booyah: !!r.booyah,
+      rankPointsDelta: r.rank_points_delta,
     };
   }
 
@@ -480,6 +611,42 @@ function create(ctx) {
       const r = q.one('SELECT * FROM match_rewards WHERE player_id = ? AND match_id = ?', me.id, params.matchId);
       if (!r) fail(404, 'match_not_found', 'No rewards recorded for that match.');
       return { body: { ...rewardView(r), wallet: walletView(me.id) } };
+    });
+
+    route('GET', '/api/me/performance/summary', ({ me, query }) => {
+      const filter = parsePerfFilter(query);
+      const rows = loadPerformanceRows(me.id, filter, false);
+      return { body: { mode: filter.mode, scope: filter.scope, summary: performanceSummary(rows) } };
+    });
+
+    route('GET', '/api/me/performance/history', ({ me, query }) => {
+      const filter = parsePerfFilter(query);
+      const rows = loadPerformanceRows(me.id, { ...filter, scope: 'all' }, true);
+      const total = q.one(`SELECT COUNT(*) c FROM match_performance WHERE player_id = ?${filter.mode ? ' AND mode = ?' : ''}`, ...(filter.mode ? [me.id, filter.mode] : [me.id])).c;
+      return { body: { total, offset: filter.offset, limit: filter.limit, matches: rows.map(performanceRowView) } };
+    });
+
+    route('GET', '/api/me/performance/history/:matchId', ({ me, params }) => {
+      const r = q.one('SELECT * FROM match_performance WHERE player_id = ? AND match_id = ?', me.id, params.matchId);
+      if (!r) fail(404, 'match_not_found', 'No statistics recorded for that match.');
+      return { body: performanceRowView(r) };
+    });
+
+    route('GET', '/api/me/performance/trends', ({ me, query }) => {
+      const filter = parsePerfFilter(query);
+      const rows = loadPerformanceRows(me.id, { ...filter, scope: 'recent' }, false).slice().reverse();
+      const trends = rows.map((r, i) => ({
+        index: i + 1,
+        matchId: r.match_id,
+        at: r.created_at,
+        kills: r.kills,
+        damageDealt: r.damage_dealt,
+        win: r.placement === 1,
+        winRate: rows.slice(Math.max(0, i - 9), i + 1).filter(x => x.placement === 1).length / Math.min(10, i + 1),
+        survivalSeconds: r.survival_seconds,
+        placement: r.placement,
+      }));
+      return { body: { mode: filter.mode, window: rows.length, trends } };
     });
 
     // --- store: diamond packages & payments ---

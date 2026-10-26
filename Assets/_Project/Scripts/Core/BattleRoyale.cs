@@ -20,12 +20,31 @@ namespace Noxy.Core
     {
         public string publicId = "", state = "", space = "", selected = "";
         public float x, y, z;
-        public int health, armor, medkits, kills, placement;
+        public int health, armor, medkits, kills, placement, matchCoins;
         public BrWeaponsDto weapons = new BrWeaponsDto();
         public BrAmmoDto ammo = new BrAmmoDto();
         public long reloadingUntil, healingUntil;
         public bool relocated, forced;
     }
+    [Serializable] public sealed class BrShopDto { public string id = "", name = ""; public float x, y, z; }
+    [Serializable] public sealed class BrCurrencyPickupDto { public string id = ""; public float x, y, z; public int amount; }
+    [Serializable] public sealed class BrShopOfferDto
+    {
+        public string weaponId = "", name = "", category = "", slot = "";
+        public int price, damage, range, magazine;
+        public float fireRate;
+        public bool owned;
+    }
+    [Serializable] public sealed class BrShopOpenDto { public bool ok; public BrShopDto shop = new BrShopDto(); public int balance; public List<BrShopOfferDto> offers = new List<BrShopOfferDto>(); }
+    [Serializable] public sealed class BrShopBuyItemDto { public string weaponId = "", slot = ""; public int price; }
+    [Serializable] public sealed class BrShopBuyDto
+    {
+        public bool ok, duplicate;
+        public int balance;
+        public BrShopBuyItemDto item = new BrShopBuyItemDto();
+        public BrYouDto you = new BrYouDto();
+    }
+    [Serializable] public sealed class BrCurrencyPickupResultDto { public bool ok; public int amount, balance; }
     [Serializable] public sealed class BrPlayerDto
     {
         public string publicId = "", username = "", state = "", anim = "", space = "";
@@ -63,6 +82,8 @@ namespace Noxy.Core
         public BrPlaneDto plane = new BrPlaneDto();
         public BrJumpDto jump = new BrJumpDto();
         public BrCombatDto combat = new BrCombatDto();
+        public List<BrShopDto> shops = new List<BrShopDto>();
+        public List<BrCurrencyPickupDto> currency = new List<BrCurrencyPickupDto>();
         public List<BrEventDto> events = new List<BrEventDto>();
         public List<BrResultDto> results = new List<BrResultDto>();
         public BrRewardsDto rewards = new BrRewardsDto();
@@ -111,6 +132,9 @@ namespace Noxy.Core
         void SelectSlot(string slot, Action<ApiResult<OkDto>> done);
         void Heal(Action<ApiResult<OkDto>> done);
         void PickupLoot(string lootId, Action<ApiResult<BrPickupDto>> done);
+        void PickupCurrency(string pickupId, Action<ApiResult<BrCurrencyPickupResultDto>> done);
+        void OpenShop(string shopId, Action<ApiResult<BrShopOpenDto>> done);
+        void BuyShopItem(string shopId, string weaponId, string requestId, Action<ApiResult<BrShopBuyDto>> done);
     }
 
     public sealed class OfflineBattleRoyaleService : IBattleRoyaleService
@@ -131,6 +155,9 @@ namespace Noxy.Core
         public void SelectSlot(string s, Action<ApiResult<OkDto>> d) => Fail(d);
         public void Heal(Action<ApiResult<OkDto>> d) => Fail(d);
         public void PickupLoot(string id, Action<ApiResult<BrPickupDto>> d) => Fail(d);
+        public void PickupCurrency(string id, Action<ApiResult<BrCurrencyPickupResultDto>> d) => Fail(d);
+        public void OpenShop(string shopId, Action<ApiResult<BrShopOpenDto>> d) => Fail(d);
+        public void BuyShopItem(string shopId, string weaponId, string requestId, Action<ApiResult<BrShopBuyDto>> d) => Fail(d);
     }
 
     public sealed class RemoteBattleRoyaleService : IBattleRoyaleService
@@ -170,6 +197,10 @@ namespace Noxy.Core
         public void SelectSlot(string slot, Action<ApiResult<OkDto>> done) => Call("POST", "/api/br/select", D("slot", slot), done);
         public void Heal(Action<ApiResult<OkDto>> done) => Call("POST", "/api/br/heal", D(), done);
         public void PickupLoot(string lootId, Action<ApiResult<BrPickupDto>> done) => Call("POST", "/api/br/loot/pickup", D("lootId", lootId), done);
+        public void PickupCurrency(string pickupId, Action<ApiResult<BrCurrencyPickupResultDto>> done) => Call("POST", "/api/br/currency/pickup", D("pickupId", pickupId), done);
+        public void OpenShop(string shopId, Action<ApiResult<BrShopOpenDto>> done) => Call("POST", "/api/br/shop/open", D("shopId", shopId), done);
+        public void BuyShopItem(string shopId, string weaponId, string requestId, Action<ApiResult<BrShopBuyDto>> done) =>
+            Call("POST", "/api/br/shop/buy", D("shopId", shopId, "weaponId", weaponId, "requestId", requestId), done);
     }
 
     // ---------------------------------------------------------------- session (phase and countdown logic)

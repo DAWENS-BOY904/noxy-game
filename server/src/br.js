@@ -27,6 +27,8 @@ const DEFAULTS = {
   // so touchdown is accepted within a tolerance, or when a descending player has stopped sinking just above the ground.
   landing: { safeSpeed: 14, damagePerExcess: 6, tolerance: 1.5, stallSeconds: 1, stallRange: 12 },
   combat: { headshotMultiplier: 2, armorAbsorb: 0.5, falloff: 0.3, relevanceRadius: 300, startHealth: 100, medkitHeal: 50, medkitSeconds: 3, medkitLimit: 4, switchSeconds: 0.3, pickupRange: 3 },
+  shop: { interactRange: 4, buyRange: 6, minCombatSeconds: 0 },
+  currency: { interactRange: 3, minAmount: 20, maxAmount: 90, pointsPerShop: 4 },
   disconnectMs: 45_000, abandonMs: 150_000, maxMatchSeconds: 1800, endedKeepMs: 10 * 60_000,
   allowedAnims: ['idle', 'walk', 'run', 'punch', 'wave', 'flex', 'shuffle', 'salute', 'freefall', 'glide', 'crouch', 'jump'],
 };
@@ -71,7 +73,7 @@ function loadMap(file) {
 function create(ctx) {
   const { q, fail, now, config, rateLimit, playerByPublicId, economy, servers } = ctx;
   const cfg = { ...DEFAULTS, ...(config.br || {}) };
-  for (const k of ['cabin', 'ground', 'freefall', 'parachute', 'landing', 'combat']) cfg[k] = { ...DEFAULTS[k], ...((config.br || {})[k] || {}) };
+  for (const k of ['cabin', 'ground', 'freefall', 'parachute', 'landing', 'combat', 'shop', 'currency']) cfg[k] = { ...DEFAULTS[k], ...((config.br || {})[k] || {}) };
   cfg.modes = { ...DEFAULTS.modes, ...((config.br || {}).modes || {}) };
   const map = loadMap(cfg.mapFile || path.join(__dirname, '..', 'data', 'maps', 'bermuda.json'));
 
@@ -82,10 +84,66 @@ function create(ctx) {
   // ---------------------------------------------------------------- helpers
   const mode = id => cfg.modes[id];
   const rnd = (seed, salt) => { const h = crypto.createHash('sha256').update(seed + ':' + salt).digest(); return h.readUInt32BE(0) / 4294967296; };
+  const ASSIST_WINDOW_MS = 15000;
 
   function cabinSpawn(slot) {
     const c = cfg.cabin, perRow = Math.max(1, Math.floor((2 * c.halfLength - 2) / c.spacing) + 1);
     return { x: -c.halfLength + 1 + (slot % perRow) * c.spacing, z: -c.halfWidth + 1 + Math.floor(slot / perRow) * c.spacing };
+  }
+
+  const SHOP_OFFERS = Object.freeze([
+    { weaponId: 'pistol_p9', name: 'P9 Pistol', category: 'Secondary', price: 120 },
+    { weaponId: 'rifle_ar', name: 'AR Rifle', category: 'Primary', price: 320 },
+  ]);
+
+  function shopCatalog() {
+    return SHOP_OFFERS.map(o => {
+      const w = WEAPONS[o.weaponId];
+      return {
+        weaponId: o.weaponId, name: o.name, category: o.category, price: o.price,
+        damage: w.damage, fireRate: +(1 / w.interval).toFixed(2), range: w.range, magazine: w.mag, slot: w.slot,
+      };
+    });
+  }
+
+  function nearestShop(m, p, maxRange) {
+    let best = null; let dBest = maxRange;
+    for (const s of m.shops || []) {
+      const d = Math.hypot(s.x - p.x, s.z - p.z);
+      if (d <= dBest) { dBest = d; best = s; }
+    }
+    return best;
+  }
+
+  function buildShops(seed) {
+    const pois = Array.isArray(map.pois) ? map.pois : [];
+    const shops = [];
+    for (const p of pois) {
+      if (!p || !num(p.x) || !num(p.z)) continue;
+      const g = map.heightAt(p.x, p.z);
+      if (!map.isValidLanding(p.x, p.z) || g <= map.waterLevel) continue;
+      shops.push({ id: `shop_${p.id}`, name: `${p.name} Shop`, x: p.x, y: g, z: p.z });
+      if (shops.length >= 8) break;
+    }
+    if (shops.length === 0) shops.push({ id: 'shop_center', name: 'Central Shop', x: 0, y: map.heightAt(0, 0), z: 0 });
+    return shops;
+  }
+
+  function buildCurrencyPickups(m) {
+    const out = [];
+    let n = 0;
+    for (const s of m.shops) {
+      for (let i = 0; i < cfg.currency.pointsPerShop; i++) {
+        const a = rnd(m.seed, `${s.id}:a:${i}`) * Math.PI * 2;
+        const d = 10 + rnd(m.seed, `${s.id}:d:${i}`) * 24;
+        let x = s.x + Math.cos(a) * d, z = s.z + Math.sin(a) * d;
+        if (!map.inBounds(x, z) || !map.isValidLanding(x, z)) { const npos = map.nearestValidLanding(x, z); x = npos.x; z = npos.z; }
+        const amount = Math.round(cfg.currency.minAmount + rnd(m.seed, `${s.id}:v:${i}`) * (cfg.currency.maxAmount - cfg.currency.minAmount));
+        const y = map.heightAt(x, z);
+        out.push({ id: `cash_${m.id}_${n++}`, x, y, z, amount, taken: false });
+      }
+    }
+    return out;
   }
 
   function planeRoute(seed) {
@@ -112,6 +170,8 @@ function create(ctx) {
       health: cfg.combat.startHealth, armor: 0, kills: 0, placement: 0, forced: false, relocated: false, vy: 0, jumpedAt: 0, landedAt: 0,
       weapons: { primary: null, secondary: null, melee: { id: 'melee_knife', mag: 0 } }, selected: 'melee', ammo: { pistol: 0, rifle: 0 }, medkits: 0,
       lastShotAt: 0, reloading: null, switchingUntil: 0, healing: null, damageTaken: [],
+      assists: 0, deaths: 0, damageDealt: 0, damageTakenTotal: 0, headshots: 0, shotsFired: 0, shotsHit: 0,
+      matchCoins: 0, purchaseKeys: new Set(),
     };
   }
 
@@ -132,7 +192,12 @@ function create(ctx) {
     const alive = alivePlayers(m).sort((a, b) => b.kills - a.kills || b.health - a.health);
     alive.forEach((p, i) => { p.placement = i + 1; });
     m.status = 'ended'; m.endedAt = now(); m.endReason = reason;
-    m.results = [...m.players.values()].sort((a, b) => a.placement - b.placement).map(p => ({ publicId: p.publicId, username: p.username, placement: p.placement, kills: p.kills }));
+    m.results = [...m.players.values()].sort((a, b) => a.placement - b.placement).map(p => ({
+      publicId: p.publicId, username: p.username, placement: p.placement, kills: p.kills,
+      deaths: p.deaths, assists: p.assists, damageDealt: p.damageDealt, damageTaken: p.damageTakenTotal, headshots: p.headshots,
+      shotsFired: p.shotsFired, shotsHit: p.shotsHit,
+      survivalSeconds: clamp(Math.round(((p.eliminatedAt || m.endedAt) - (m.t ? m.t.flightStart : m.createdAt)) / 1000), 0, cfg.maxMatchSeconds),
+    }));
     emit(m, 'phase', { phase: 'ended', reason });
     for (const p of m.players.values()) {
       if (p.abandoned) continue;
@@ -143,8 +208,15 @@ function create(ctx) {
       const startedAt = m.t ? m.t.flightStart : m.createdAt;
       m.rewards = economy.processMatch({
         matchId: m.id, mode: m.mode, playerCount: m.players.size,
+        matchStartedAt: startedAt, matchEndedAt: m.endedAt,
         durationSeconds: clamp(Math.round((m.endedAt - startedAt) / 1000), 0, 7200),
-        players: m.results.map(r => ({ publicId: r.publicId, placement: r.placement, kills: Math.min(r.kills, 100) })),
+        players: m.results.map(r => ({
+          publicId: r.publicId, placement: r.placement, kills: Math.min(r.kills, 100),
+          deaths: clamp(r.deaths || 0, 0, 20), assists: clamp(r.assists || 0, 0, 100),
+          damageDealt: clamp(r.damageDealt || 0, 0, 200000), damageTaken: clamp(r.damageTaken || 0, 0, 200000),
+          headshots: clamp(r.headshots || 0, 0, 100), shotsFired: clamp(r.shotsFired || 0, 0, 20000), shotsHit: clamp(r.shotsHit || 0, 0, 20000),
+          survivalSeconds: clamp(r.survivalSeconds || 0, 0, 7200),
+        })),
       });
     } catch (e) { m.rewards = { error: e.code || 'reward_failed' }; }
   }
@@ -153,7 +225,19 @@ function create(ctx) {
     if (p.state === 'eliminated') return;
     const aliveBefore = alivePlayers(m).length;
     p.state = 'eliminated'; p.placement = aliveBefore; p.health = 0; p.eliminatedAt = now(); p.reloading = null; p.healing = null;
+    p.deaths++;
     if (killer) killer.kills++;
+    if (killer) {
+      const cutoff = now() - ASSIST_WINDOW_MS;
+      const helpers = new Set();
+      for (const d of p.damageTaken) {
+        if (d.at < cutoff || d.from === killer.publicId) continue;
+        if (helpers.has(d.from)) continue;
+        helpers.add(d.from);
+        const helper = m.players.get(d.from);
+        if (helper && helper.state !== 'eliminated') helper.assists++;
+      }
+    }
     emit(m, 'elimination', { victim: p.publicId, victimName: p.username, killer: killer ? killer.publicId : null, killerName: killer ? killer.username : null, reason: why, placement: p.placement });
   }
 
@@ -300,10 +384,12 @@ function create(ctx) {
       server: m.server, players: [...m.players.values()].sort((a, b) => a.slot - b.slot).map(x => playerView(m, p, x)),
       you: {
         publicId: p.publicId, state: p.state, space: p.space, x: p.x, y: p.y, z: p.z, health: p.health, armor: p.armor, medkits: p.medkits, selected: p.selected, kills: p.kills,
-        weapons: p.weapons, ammo: p.ammo, reloadingUntil: p.reloading ? p.reloading.endsAt : 0, healingUntil: p.healing ? p.healing.endsAt : 0, relocated: p.relocated, forced: p.forced, placement: p.placement,
+        weapons: p.weapons, ammo: p.ammo, reloadingUntil: p.reloading ? p.reloading.endsAt : 0, healingUntil: p.healing ? p.healing.endsAt : 0, relocated: p.relocated, forced: p.forced, placement: p.placement, matchCoins: p.matchCoins,
       },
       events: m.events.filter(e => e.seq > since),
     };
+    v.shops = (m.shops || []).map(s => ({ id: s.id, name: s.name, x: s.x, y: s.y, z: s.z }));
+    v.currency = (m.currency || []).filter(c => !c.taken).map(c => ({ id: c.id, x: c.x, y: c.y, z: c.z, amount: c.amount }));
     if (m.status === 'waiting') { const pol = mode(m.mode); v.waiting = { players: m.players.size, minPlayers: pol.minPlayers, maxPlayers: pol.maxPlayers, fillDeadlineAt: m.fillDeadline, cancelAt: m.cancelAt }; }
     if (m.route) {
       v.route = m.route;
@@ -381,6 +467,11 @@ function create(ctx) {
   // ---------------------------------------------------------------- routes
   function install(route) {
     const guard = () => { if (!map) fail(503, 'map_missing', 'Battle Royale map data (server/data/maps/bermuda.json) is missing.'); };
+    const requireActiveGroundPhase = (m, p) => {
+      if (m.status !== 'combat') fail(409, 'combat_disabled', 'This interaction is available after combat starts.');
+      if (p.state === 'eliminated') fail(409, 'eliminated', 'You are eliminated.');
+      if (p.state !== 'landed') fail(409, 'not_landed', 'You can only do this on the ground.');
+    };
 
     route('GET', '/api/br/config', ({ me }) => {
       guard(); rateLimit('brState', me.id);
@@ -389,6 +480,7 @@ function create(ctx) {
         cabin: cfg.cabin, ground: cfg.ground, freefall: cfg.freefall, parachute: cfg.parachute, landing: cfg.landing, headshotMultiplier: cfg.combat.headshotMultiplier,
         modes: Object.fromEntries(Object.entries(cfg.modes).map(([k, v]) => [k, { minPlayers: v.minPlayers, maxPlayers: v.maxPlayers, fillTimeoutSeconds: v.fillTimeoutMs / 1000 }])),
         weapons: WEAPONS, allowedAnims: cfg.allowedAnims,
+        shop: cfg.shop, currency: cfg.currency,
       } };
     });
 
@@ -416,6 +508,8 @@ function create(ctx) {
       if (!m || m.status !== 'waiting') {
         const t = now(), id = 'br-' + crypto.randomBytes(6).toString('hex');
         m = { id, mode: modeId, status: 'waiting', createdAt: t, fillDeadline: t + pol.fillTimeoutMs, cancelAt: t + pol.maxWaitMs, seed: crypto.randomBytes(8).toString('hex'), players: new Map(), events: [], server: srv ? { id: srv.id, name: srv.name, region: srv.region, host: srv.host, port: srv.port } : null };
+        m.shops = buildShops(m.seed);
+        m.currency = buildCurrencyPickups(m);
         matches.set(id, m);
       }
       const p = newPlayer(m, me); m.players.set(me.public_id, p); inMatch.set(me.id, m.id);
@@ -520,6 +614,64 @@ function create(ctx) {
       return { body: { ok: true, item, you: { weapons: p.weapons, ammo: p.ammo, medkits: p.medkits, armor: p.armor, selected: p.selected } } };
     });
 
+    route('POST', '/api/br/currency/pickup', ({ me, body }) => {
+      guard(); rateLimit('brAction', me.id);
+      const { m, p } = activeMatchOf(me);
+      requireActiveGroundPhase(m, p);
+      const id = typeof body.pickupId === 'string' ? body.pickupId : '';
+      const pick = (m.currency || []).find(c => c.id === id);
+      if (!pick) fail(404, 'unknown_pickup', 'No such currency pickup.');
+      if (pick.taken) fail(409, 'already_taken', 'This pickup is already taken.');
+      if (Math.hypot(pick.x - p.x, pick.z - p.z) > cfg.currency.interactRange || Math.abs(pick.y - p.y) > 3) fail(409, 'too_far', 'Too far away.');
+      pick.taken = true;
+      p.matchCoins += pick.amount;
+      emit(m, 'currency_pickup', { player: p.publicId, pickup: pick.id, amount: pick.amount });
+      return { body: { ok: true, amount: pick.amount, balance: p.matchCoins } };
+    });
+
+    route('POST', '/api/br/shop/open', ({ me, body }) => {
+      guard(); rateLimit('brAction', me.id);
+      const { m, p } = activeMatchOf(me);
+      requireActiveGroundPhase(m, p);
+      const asked = typeof body.shopId === 'string' ? body.shopId : '';
+      const target = asked ? (m.shops || []).find(s => s.id === asked) : nearestShop(m, p, cfg.shop.interactRange);
+      if (!target) fail(404, 'shop_not_found', 'No such shop.');
+      if (Math.hypot(target.x - p.x, target.z - p.z) > cfg.shop.interactRange || Math.abs(target.y - p.y) > 3) fail(409, 'too_far', 'Move closer to the shop.');
+      const offers = shopCatalog().map(o => ({
+        ...o,
+        owned: !!Object.values(p.weapons).find(w => w && w.id === o.weaponId),
+      }));
+      return { body: { ok: true, shop: target, balance: p.matchCoins, offers } };
+    });
+
+    route('POST', '/api/br/shop/buy', ({ me, body }) => {
+      guard(); rateLimit('brAction', me.id);
+      const { m, p } = activeMatchOf(me);
+      requireActiveGroundPhase(m, p);
+      const shopId = typeof body.shopId === 'string' ? body.shopId : '';
+      const shop = (m.shops || []).find(s => s.id === shopId);
+      if (!shop) fail(404, 'shop_not_found', 'No such shop.');
+      if (Math.hypot(shop.x - p.x, shop.z - p.z) > cfg.shop.buyRange || Math.abs(shop.y - p.y) > 3) fail(409, 'too_far', 'Move closer to the shop.');
+      const weaponId = typeof body.weaponId === 'string' ? body.weaponId : '';
+      const offer = SHOP_OFFERS.find(x => x.weaponId === weaponId);
+      if (!offer) fail(404, 'offer_not_found', 'This weapon is not sold here.');
+      const reqId = typeof body.requestId === 'string' ? body.requestId.slice(0, 72) : '';
+      if (reqId) {
+        const key = `${p.playerId}:${reqId}`;
+        if (p.purchaseKeys.has(key)) return { body: { ok: true, duplicate: true, balance: p.matchCoins, you: { weapons: p.weapons, ammo: p.ammo, selected: p.selected } } };
+        p.purchaseKeys.add(key);
+      }
+      if (Object.values(p.weapons).find(w => w && w.id === offer.weaponId)) fail(409, 'already_owned', 'You already have this weapon.');
+      if (p.matchCoins < offer.price) fail(402, 'insufficient_funds', 'Not enough match currency.');
+      const def = WEAPONS[offer.weaponId];
+      p.matchCoins -= offer.price;
+      p.weapons[def.slot] = { id: offer.weaponId, mag: def.mag };
+      if (def.ammo) p.ammo[def.ammo] = Math.max(p.ammo[def.ammo], def.mag * 2);
+      p.selected = def.slot;
+      emit(m, 'shop_buy', { player: p.publicId, shop: shop.id, weapon: offer.weaponId, price: offer.price });
+      return { body: { ok: true, balance: p.matchCoins, item: { weaponId: offer.weaponId, slot: def.slot, price: offer.price }, you: { weapons: p.weapons, ammo: p.ammo, selected: p.selected } } };
+    });
+
     route('POST', '/api/br/fire', ({ me, body }) => {
       guard(); rateLimit('brAction', me.id);
       const { m, p } = activeMatchOf(me);
@@ -540,6 +692,7 @@ function create(ctx) {
       d.x /= len; d.y /= len; d.z /= len;
       p.lastShotAt = t; p.healing = null;
       if (def.ammo) w.mag--;
+      p.shotsFired++;
       const hit = trace(m, p, d, def.range);
       let result = null;
       if (hit) {
@@ -550,6 +703,8 @@ function create(ctx) {
         target.armor -= soak; target.health -= dmg - soak; target.healing = null;
         target.damageTaken.push({ at: t, from: p.publicId, amount: dmg });
         if (target.damageTaken.length > 20) target.damageTaken.shift();
+        p.shotsHit++; p.damageDealt += dmg; if (hit.head) p.headshots++;
+        target.damageTakenTotal += dmg;
         result = { target: target.publicId, damage: dmg, head: hit.head, distance: +hit.t.toFixed(1) };
         if (target.health <= 0) eliminate(m, target, hit.head ? 'headshot' : 'shot', p);
         advance(m);

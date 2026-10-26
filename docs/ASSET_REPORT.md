@@ -13,6 +13,31 @@ Every file is a Sketchfab download labelled CC-BY-4.0 by its uploader, but:
 
 So `RightsConfirmed = false` for all of them and `LandmarkAssetPolicy.CanUse` returns false with a reason. The game uses **original procedural placeholders** instead (cabin and plane in `BrWorldParts.cs`, landmarks in `IslandBuilder.cs`). A person must check provenance, then set `RightsConfirmed = true`, before any of this changes. Even then CC-BY needs visible attribution (`LandmarkAssetPolicy.Credit` produces the line) and a licence link in your credits screen.
 
+## Review: "Free Fire Adam" T-pose model by BOSS H (requested 2026-10-26)
+
+Source reviewed: https://sketchfab.com/3d-models/freefire-new-tpose-adam-model-by-boss-shivraj-5a4f86bd89414348a17ea1d8b7864674
+(project file: `Assets/_Project/Environment/Landmarks/new-user-format.glb`, manifest id `tpose_character`).
+
+**What the listing actually shows**
+
+- Uploader: Sketchfab account "BOSS H" (`/Bossh`), self-describing as the YouTube channel "BOSS SHIVRAJ". The description only promotes that channel ("FOLLOW FOR MORE MODEL'S") — it makes **no claim of original creation and shows no permission from Garena**.
+- Title and tags are the uploader's own words: `freefire-new-tpose-adam-model`, tagged `freefire`, `freefiregarena`, `freefirecharactermodel3d`, `freefiremax`, `freefiremalebundle`, `freefireclocktower`. "Adam" is one of Free Fire's default characters; the uploader's own account hosts a series of other Free Fire assets, which is consistent with game-file extraction, not original art.
+- Licence label on the page: "CC Attribution" (CC BY 4.0), published 18 Aug 2022. The GLB's embedded metadata repeats author/licence/source; its `copyright` field is **empty**.
+
+**Verdict: rights are NOT adequately verified. The asset stays blocked.**
+
+A CC BY 4.0 licence can only be granted by someone who holds the rights to the work. The evidence shows a third party redistributing a recognisable commercial game character under a licence they have no demonstrated authority to apply. The label on the page is self-assigned metadata, not proof of ownership; Sketchfab does not verify uploader ownership (the page itself links a DMCA report form). Nothing in the listing, the embedded metadata, or the file establishes that BOSS H / BOSS SHIVRAJ owns or may redistribute Garena's Free Fire character. Shipping it would also directly violate this project's standing rule against copying Free Fire characters or artwork. `RightsConfirmed` for `tpose_character` remains **false** and `LandmarkAssetPolicy.CanUse` continues to return false. No attribution line is added to the Credits screen because the model will not ship; attribution is a licence obligation for *use*, not for an unused file.
+
+What would change the verdict: written confirmation from the actual rights holder (Garena), or proof the mesh is the uploader's original fan-art-free creation with no game-derived geometry or textures — neither of which is plausible for this listing, and neither exists today.
+
+**Technical facts (re-measured 2026-10-26 with `tools/asset-validate/glb-inspect.mjs`, unchanged from the first inspection)**
+
+- glTF 2.0, no required extensions; 5 meshes, 5 double-sided materials, 5 PNG textures (256-1024 px, ~4 MB uncompressed), 5,454 triangles, 3,522 vertices.
+- Bounds 7.35 x 8.01 x 1.70 m: an **8 m tall** character (a human-scaled character needs about 0.22x rescale), pivot at the feet.
+- **`skins: 0`, `animations: 0` — confirmed: no skeleton, no rig, no animations.**
+
+Rigging work that would be required *if* rights were ever settled (they are not): add a humanoid skeleton (hips/spine/chest/neck/head, arms, hands, legs), skin-bind all 5 meshes, author or retarget the full animation set the game already needs (idle, walk, run, jump, freefall, glide, land, crouch, punch, weapon poses), rescale to ~1.8 m, and hook it into the existing `CharacterView`/`CharacterPreview` pipeline. This is roughly a new character deliverable; the current procedural placeholder character already covers all of it.
+
 ## Measurements
 
 | File (actual path under `Assets/_Project/Environment/Landmarks/`) | Author | Raw size (m) | Useful size (m) | Triangles | Notes |

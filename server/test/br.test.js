@@ -491,3 +491,46 @@ test('br: a player who stops just above the (coarser) server terrain still touch
     assert.equal(rb.body.state, 'parachute', '40 m up is still in the air');
   } finally { await s.close(); }
 });
+
+test('br: shops and match-currency pickups are server-authoritative, phase-gated and idempotent', async () => {
+  const s = await world();
+  try {
+    const ps = await players(s, 4); await startToCombatReady(s, ps);
+    const a = ps[0];
+    const m = matchOf(s);
+    const me = m.players.get(a.me.publicId);
+
+    let st = await stateOf(a);
+    assert.ok(Array.isArray(st.shops) && st.shops.length > 0);
+    assert.ok(Array.isArray(st.currency) && st.currency.length > 0);
+    assert.equal((await a.post('/api/br/shop/open', { shopId: st.shops[0].id })).status, 409, 'shop closed before combat');
+
+    adv(s, 80_000); // cabin+flight -> combat
+    st = await stateOf(a);
+    const shop = st.shops[0], cash = st.currency[0];
+    me.state = 'landed'; me.x = cash.x; me.y = cash.y; me.z = cash.z; me.lastSeen = s.clock.t; me.moveAt = s.clock.t;
+    const take = await a.post('/api/br/currency/pickup', { pickupId: cash.id });
+    assert.equal(take.status, 200);
+    assert.ok(take.body.amount > 0);
+    assert.equal((await a.post('/api/br/currency/pickup', { pickupId: cash.id })).status, 409, 'cannot take one pickup twice');
+
+    me.x = shop.x; me.y = shop.y; me.z = shop.z; me.lastSeen = s.clock.t; me.moveAt = s.clock.t;
+    me.matchCoins = 500;
+    const open = await a.post('/api/br/shop/open', { shopId: shop.id });
+    assert.equal(open.status, 200);
+    assert.ok(open.body.offers.some(o => o.weaponId === 'rifle_ar'));
+
+    const buy = await a.post('/api/br/shop/buy', { shopId: shop.id, weaponId: 'rifle_ar', requestId: 'req-1' });
+    assert.equal(buy.status, 200);
+    assert.equal(buy.body.item.weaponId, 'rifle_ar');
+    const after = me.matchCoins;
+    const dup = await a.post('/api/br/shop/buy', { shopId: shop.id, weaponId: 'rifle_ar', requestId: 'req-1' });
+    assert.equal(dup.status, 200);
+    assert.equal(dup.body.duplicate, true);
+    assert.equal(me.matchCoins, after, 'duplicate request does not spend again');
+
+    assert.equal((await a.post('/api/br/shop/buy', { shopId: shop.id, weaponId: 'rifle_ar', requestId: 'req-2' })).status, 409, 'already owned in match');
+    me.matchCoins = 0;
+    assert.equal((await a.post('/api/br/shop/buy', { shopId: shop.id, weaponId: 'pistol_p9', requestId: 'req-3' })).status, 402, 'insufficient funds');
+  } finally { await s.close(); }
+});

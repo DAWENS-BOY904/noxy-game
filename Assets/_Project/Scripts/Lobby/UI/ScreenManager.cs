@@ -17,6 +17,7 @@ namespace Noxy.Lobby
         Invitations,
         Missions,
         Rewards,
+        Performance,
         Shop,
         Settings,
         HudEditor,

@@ -92,8 +92,8 @@ namespace Noxy.Core
                 RequestedPath = "", ActualPath = Dir + "new-user-format.glb",
                 Author = "BOSS SHIVRAJ", License = "CC-BY-4.0", SourceUrl = "https://sketchfab.com/3d-models/freefire-new-tpose-adam-model-by-boss-shivraj-5a4f86bd89414348a17ea1d8b7864674",
                 RawSizeMeters = new[] { 7.3f, 8.0f, 1.7f }, MeasuredSizeMeters = new[] { 7.3f, 8.0f, 1.7f }, Triangles = 5454,
-                Problems = "A static T-pose mesh with no skeleton or animation, 8 m tall, so it cannot replace the game's rigged character.",
-                IpConcern = "Titled as a Free Fire character ('freefire-new-tpose-adam-model'): a recognisable character from a commercial game. Do not ship it.",
+                Problems = "A static T-pose mesh with no skeleton (skins: 0) and no animations, 8 m tall (needs ~0.22x rescale), so it cannot replace the game's rigged character; would need full rigging plus the game's whole animation set.",
+                IpConcern = "Reviewed 2026-10-26 (docs/ASSET_REPORT.md): the listing's CC-BY-4.0 label is self-assigned by uploader 'BOSS H'/'BOSS SHIVRAJ', whose own title and tags identify it as Garena's Free Fire 'Adam' character. No ownership claim, no Garena permission, empty copyright field. The uploader cannot grant a licence to IP they do not hold. Rights not verified: do not ship.",
             },
             new LandmarkAsset
             {

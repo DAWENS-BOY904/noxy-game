@@ -306,6 +306,7 @@ namespace Noxy.Lobby
             AddNav("INVITES", LobbyScreenId.Invitations, false);
             AddNav("MISSIONS", LobbyScreenId.Missions, false);
             AddNav("REWARDS", LobbyScreenId.Rewards, false);
+            AddNav("PERFORMANCE", LobbyScreenId.Performance, false);
             AddNav("SHOP", LobbyScreenId.Shop, false);
             AddNav("CLANS", LobbyScreenId.Clans, false);
             AddNav("CLAN WARS", LobbyScreenId.ClanWars, false);
