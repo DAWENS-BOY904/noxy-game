@@ -5,39 +5,53 @@ using UnityEngine;
 namespace Noxy.Lobby
 {
     /// <summary>
-    /// Composition root for client services. Swap the local mock implementations here for
-    /// backend-backed ones (IProfileService, IMatchmakingService) when they exist.
-    /// Static so state survives lobby <-> game scene changes.
+    /// Composition root for client services. Static so state survives lobby &lt;-&gt; game scene changes.
+    /// Offline is the default: the local mock profile and local settings always work. Signing in (Settings &gt; Account)
+    /// binds the same profile object to server data and switches Social to the remote implementation.
     /// </summary>
     public static class AppServices
     {
+        public const string DefaultServerUrl = "http://127.0.0.1:8787";
+
         public static ICosmeticCatalog Catalog { get; private set; }
         public static IProfileService Profile { get; private set; }
+        public static LocalConfigStore Config { get; private set; }
         public static GameModeSelection Modes { get; private set; }
         public static MatchmakingController Matchmaking { get; private set; }
         public static OfflineMatchmakingService OfflineMatchmaking { get; private set; }
         public static NotificationService Notifications { get; private set; }
+        public static AccountService Account { get; private set; }
+        public static ISocialService Social { get; private set; }
 
         public static bool IsInitialized => Profile != null;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
         {
-            Catalog = null;
-            Profile = null;
-            Modes = null;
-            Matchmaking = null;
-            OfflineMatchmaking = null;
-            Notifications = null;
+            Catalog = null; Profile = null; Config = null; Modes = null; Matchmaking = null;
+            OfflineMatchmaking = null; Notifications = null; Account = null; Social = null;
         }
 
         public static void EnsureInitialized()
         {
             if (IsInitialized) return;
 
+            string dir = Application.persistentDataPath;
             Catalog = new DefaultCosmeticCatalog();
-            Profile = new LocalProfileService(Catalog, Path.Combine(Application.persistentDataPath, "local_profile.json"));
+            Profile = new LocalProfileService(Catalog, Path.Combine(dir, "local_profile.json"));
+            Config = new LocalConfigStore(dir, Application.isMobilePlatform);
             Notifications = new NotificationService();
+
+            DisplayApplier.ApplyFirstRunDefaults(Config);
+            DisplayApplier.Apply(Config.Settings);
+            Config.Changed += OnConfigChanged;
+
+            var tokens = new PrefsTokenStore();
+            string url = string.IsNullOrEmpty(tokens.LoadServerUrl()) ? DefaultServerUrl : tokens.LoadServerUrl();
+            var api = new ApiClient(new UnityWebRequestTransport(), url);
+            var remote = new RemoteSocialService(api);
+            Social = remote;
+            Account = new AccountService(api, Profile, Config, Notifications, remote, tokens);
 
             var modes = DefaultGameModes.Create();
             foreach (var mode in modes)
@@ -53,19 +67,21 @@ namespace Noxy.Lobby
             Modes = new GameModeSelection(modes, Profile.Profile.selectedModeId);
             Modes.SelectionChanged += mode => Profile.SetSelectedMode(mode.Id);
 
-            OfflineMatchmaking = new OfflineMatchmakingService();
+            OfflineMatchmaking = new OfflineMatchmakingService { SimulateFailure = LobbySettings.SimulateMatchmakingError };
             Matchmaking = new MatchmakingController(new IMatchmakingService[]
             {
                 OfflineMatchmaking,
                 new UnavailableMatchmakingService()
             });
 
-            LobbySettings.Apply();
-            OfflineMatchmaking.SimulateFailure = LobbySettings.SimulateMatchmakingError;
-
-            Notifications.Post("Welcome to Noxy", "Local demo profile loaded. Online services are not connected.", NotificationSeverity.Info, false);
+            AppRunner.Ensure();
+            Notifications.Post("Welcome to Noxy", "Offline profile loaded. Sign in under Settings > Account for online features.", NotificationSeverity.Info, false);
             if (Profile.CanClaimDailyReward)
                 Notifications.Post("Daily reward ready", "Open Rewards to claim it.", NotificationSeverity.Success, false);
+
+            Account.TryRestoreSession();
         }
+
+        private static void OnConfigChanged() => DisplayApplier.Apply(Config.Settings);
     }
 }
