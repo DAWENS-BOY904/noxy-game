@@ -9,14 +9,17 @@ namespace Noxy.Lobby
     {
         Lobby,
         Profile,
-        Wardrobe,
+        PlayerProfile,
+        Vault,
         Inventory,
         Friends,
         Party,
+        Invitations,
         Missions,
         Rewards,
         Shop,
         Settings,
+        HudEditor,
         Notifications
     }
 
@@ -29,9 +32,27 @@ namespace Noxy.Lobby
         public CharacterPreview Preview;
         public CameraRig Camera;
         public MatchmakingPresenter Matchmaking;
+        public DialogOverlay Dialog;
 
         public bool Portrait => Canvas.IsPortrait;
         public Vector2 Size => Canvas.SafeSize;
+
+        /// <summary>Opens another player's public profile (from search results, friends or the party).</summary>
+        public void ViewPlayer(string publicId)
+        {
+            if (Screens.TryGet(LobbyScreenId.PlayerProfile, out var screen) && screen is PlayerProfileScreen p)
+            {
+                p.Target = publicId;
+                Screens.Open(LobbyScreenId.PlayerProfile);
+            }
+        }
+
+        /// <summary>Asks for confirmation unless the player turned confirmations off (destructive actions always ask).</summary>
+        public void Confirm(string title, string message, string confirmLabel, System.Action yes, bool destructive = false)
+        {
+            if (!destructive && !AppServices.Config.Settings.confirmDialogs) { yes?.Invoke(); return; }
+            Dialog.Ask(title, message, confirmLabel, yes, destructive);
+        }
     }
 
     /// <summary>Navigation between the lobby HUD and full screens (stack based, supports Back / Esc / Android back).</summary>

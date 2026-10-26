@@ -14,6 +14,7 @@ namespace Noxy.Lobby
         private RectTransform safeRoot;
         private Vector2Int lastScreen;
         private Rect lastSafeArea;
+        private float lastUiScale = 1f;
 
         public bool IsPortrait { get; private set; }
 
@@ -21,6 +22,8 @@ namespace Noxy.Lobby
         public Vector2 SafeSize { get; private set; }
 
         public event Action LayoutChanged;
+
+        private static float UiScale => AppServices.IsInitialized ? AppServices.Config.Settings.uiScale : 1f;
 
         public void Initialize(CanvasScaler scaler, RectTransform safeRoot)
         {
@@ -33,7 +36,8 @@ namespace Noxy.Lobby
         private void Update()
         {
             if (scaler == null) return;
-            if (lastScreen.x != Screen.width || lastScreen.y != Screen.height || lastSafeArea != Screen.safeArea)
+            if (lastScreen.x != Screen.width || lastScreen.y != Screen.height || lastSafeArea != Screen.safeArea
+                || !Mathf.Approximately(lastUiScale, UiScale))
                 Refresh();
         }
 
@@ -42,6 +46,7 @@ namespace Noxy.Lobby
             int w = Mathf.Max(1, Screen.width), h = Mathf.Max(1, Screen.height);
             lastScreen = new Vector2Int(w, h);
             lastSafeArea = Screen.safeArea;
+            lastUiScale = UiScale;
             float aspect = (float)w / h;
             IsPortrait = h > w;
 
@@ -49,12 +54,12 @@ namespace Noxy.Lobby
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             if (IsPortrait)
             {
-                scaler.referenceResolution = new Vector2(900f, 1600f);
+                scaler.referenceResolution = new Vector2(900f, 1600f) / lastUiScale;
                 scaler.matchWidthOrHeight = 0f; // keep width constant, extra height is free space
             }
             else
             {
-                scaler.referenceResolution = new Vector2(1600f, 900f);
+                scaler.referenceResolution = new Vector2(1600f, 900f) / lastUiScale;
                 // 4:3 matches width so nothing overflows; 16:9 and wider match height.
                 scaler.matchWidthOrHeight = Mathf.Clamp01(Mathf.InverseLerp(1.33f, 1.78f, aspect));
             }
