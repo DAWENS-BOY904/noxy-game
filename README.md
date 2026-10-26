@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 # Noxy - Main Lobby (Unity 6)
 
 First vertical slice of an original third-person multiplayer shooter: a playable main lobby with a 3D character preview, game-mode selection, profile/wardrobe/inventory, navigation screens and a PLAY flow.
@@ -57,6 +58,9 @@ Assets/_Project/
 ## Replacing placeholders
 
 See `Assets/_Project/Art/Placeholders/README.md`.
+=======
+# noxy-game
+>>>>>>> 37c91b54357a766fa5154f69accaa4d9b87c50d6
 =======
 # noxy-game
 >>>>>>> 37c91b54357a766fa5154f69accaa4d9b87c50d6
