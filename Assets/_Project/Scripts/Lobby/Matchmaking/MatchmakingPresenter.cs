@@ -11,6 +11,7 @@ namespace Noxy.Lobby
     /// </summary>
     public sealed class MatchmakingPresenter : MonoBehaviour
     {
+        private MatchmakingController controller;
         private MatchmakingOverlay overlay;
         private bool loadingScene;
 
@@ -19,37 +20,61 @@ namespace Noxy.Lobby
         public void Initialize(MatchmakingOverlay overlay)
         {
             this.overlay = overlay;
-            AppServices.Matchmaking.Reset();
-            AppServices.Matchmaking.StatusChanged += OnStatus;
-            overlay.CancelClicked += OnCancel;
-            overlay.RetryClicked += OnRetry;
-            overlay.CloseClicked += OnClose;
+            controller = AppServices.Matchmaking;
+            if (controller == null || overlay == null)
+            {
+                Debug.LogError("[Noxy] Matchmaking presenter could not initialize because its controller or overlay is missing.", this);
+                enabled = false;
+                return;
+            }
+
+            controller.Reset();
+            controller.StatusChanged += OnStatus;
+            this.overlay.CancelClicked += OnCancel;
+            this.overlay.RetryClicked += OnRetry;
+            this.overlay.CloseClicked += OnClose;
         }
 
         private void OnDestroy()
         {
-            if (AppServices.Matchmaking != null) AppServices.Matchmaking.StatusChanged -= OnStatus;
+            if (controller != null) controller.StatusChanged -= OnStatus;
         }
 
         private void Update()
         {
-            if (AppServices.Matchmaking != null) AppServices.Matchmaking.Tick(Time.unscaledDeltaTime);
+            if (controller != null) controller.Tick(Time.unscaledDeltaTime);
         }
 
         public void Play()
         {
+            if (AppServices.Modes == null || AppServices.Profile == null || AppServices.Profile.Profile == null)
+            {
+                AppServices.Notifications?.Post("Matchmaking unavailable", "Player or mode data is not initialized.", NotificationSeverity.Error);
+                return;
+            }
             var mode = AppServices.Modes.Selected;
+            if (mode == null)
+            {
+                AppServices.Notifications?.Post("Matchmaking unavailable", "Select a game mode before playing.", NotificationSeverity.Warning);
+                return;
+            }
             loadingScene = false;
 
-            var snap = AppServices.Social.Snapshot;
-            if (AppServices.Social.IsAvailable && snap.InParty && snap.Party.members.Count > mode.MaxPartySize)
+            var social = AppServices.Social;
+            var snap = social != null ? social.Snapshot : null;
+            if (social != null && social.IsAvailable && snap != null && snap.InParty && snap.Party != null && snap.Party.members.Count > mode.MaxPartySize)
             {
                 AppServices.Notifications.Post("Can't start match",
                     mode.DisplayName + " is a solo mode. Leave your party first.", NotificationSeverity.Warning);
                 return;
             }
 
-            if (!AppServices.Matchmaking.TryStart(mode, AppServices.Profile.Profile.playerId, out string reason))
+            if (controller == null)
+            {
+                AppServices.Notifications.Post("Matchmaking unavailable", "The matchmaking controller is not initialized.", NotificationSeverity.Error);
+                return;
+            }
+            if (!controller.TryStart(mode, AppServices.Profile.Profile.playerId, out string reason))
                 AppServices.Notifications.Post("Can't start match", reason, NotificationSeverity.Warning);
         }
 
@@ -57,24 +82,25 @@ namespace Noxy.Lobby
         public bool HandleBack()
         {
             if (!IsOverlayVisible) return false;
-            var status = AppServices.Matchmaking.Status;
+            if (controller == null) return false;
+            var status = controller.Status;
             if (status.IsActive) OnCancel();
             else if (status.State == MatchmakingState.Failed) OnClose();
             return true;
         }
 
-        private void OnCancel() => AppServices.Matchmaking.Cancel();
+        private void OnCancel() => controller?.Cancel();
 
         private void OnRetry()
         {
-            AppServices.Matchmaking.Reset();
+            controller?.Reset();
             Play();
         }
 
         private void OnClose()
         {
-            AppServices.Matchmaking.Reset();
-            overlay.Hide();
+            controller?.Reset();
+            if (overlay != null) overlay.Hide();
         }
 
         private void OnStatus(MatchmakingStatus status)
@@ -83,27 +109,27 @@ namespace Noxy.Lobby
             {
                 case MatchmakingState.Searching:
                 case MatchmakingState.Connecting:
-                    overlay.Present(status);
+                    if (overlay != null) overlay.Present(status);
                     break;
 
                 case MatchmakingState.Succeeded:
-                    overlay.Present(status);
+                    if (overlay != null) overlay.Present(status);
                     if (!loadingScene && status.Assignment != null) StartCoroutine(LoadAssignedScene(status.Assignment));
                     break;
 
                 case MatchmakingState.Failed:
                     loadingScene = false;
-                    overlay.Present(status);
+                    if (overlay != null) overlay.Present(status);
                     AppServices.Notifications.Post("Matchmaking failed", status.Message, NotificationSeverity.Error, false);
                     break;
 
                 case MatchmakingState.Cancelled:
-                    overlay.Hide();
+                    if (overlay != null) overlay.Hide();
                     AppServices.Notifications.Post("Matchmaking cancelled", "You left the queue.", NotificationSeverity.Info);
                     break;
 
                 default:
-                    overlay.Hide();
+                    if (overlay != null) overlay.Hide();
                     break;
             }
         }

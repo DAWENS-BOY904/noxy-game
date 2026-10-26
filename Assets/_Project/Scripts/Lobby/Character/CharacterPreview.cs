@@ -14,6 +14,7 @@ namespace Noxy.Lobby
         private const float ReturnDelaySeconds = 2.5f;
 
         private ICharacterView view;
+        private Transform viewRoot;
         private ICosmeticCatalog catalog;
         private Loadout shown;
 
@@ -28,10 +29,12 @@ namespace Noxy.Lobby
         {
             this.catalog = catalog;
             view = CharacterViewFactory.Create(transform);
+            viewRoot = view != null ? view.Root : null;
         }
 
         public void ShowLoadout(Loadout loadout)
         {
+            if (view == null || catalog == null || loadout == null) return;
             shown = loadout.Clone();
             view.Apply(shown, catalog);
         }
@@ -49,7 +52,7 @@ namespace Noxy.Lobby
 
         public void PlayEmote(string cosmeticId)
         {
-            if (view != null && catalog.TryGet(cosmeticId, out var item) && item.Slot == CosmeticSlot.Emote) view.PlayEmote(item.Variant);
+            if (view != null && catalog != null && catalog.TryGet(cosmeticId, out var item) && item.Slot == CosmeticSlot.Emote) view.PlayEmote(item.Variant);
         }
 
         private bool returningToFront;
@@ -74,7 +77,7 @@ namespace Noxy.Lobby
 
         private void Update()
         {
-            if (view == null || view.Root == null) return;
+            if (viewRoot == null) return;
 
             float dt = Time.unscaledDeltaTime;
 
@@ -97,9 +100,9 @@ namespace Noxy.Lobby
 
             float sway = (!inspectMode && autoRotate && !dragging) ? Mathf.Sin(Time.unscaledTime * 0.55f) * 22f : 0f;
             float target = userYaw + sway;
-            var current = view.Root.localRotation;
+            var current = viewRoot.localRotation;
             var desired = Quaternion.Euler(0f, target, 0f);
-            view.Root.localRotation = Quaternion.Slerp(current, desired, 1f - Mathf.Exp(-14f * dt));
+            viewRoot.localRotation = Quaternion.Slerp(current, desired, 1f - Mathf.Exp(-14f * dt));
         }
     }
 
