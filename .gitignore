@@ -28,6 +28,11 @@ crashlytics-build.properties
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
 node_modules/
 tools/core-tests/bin/
 tools/core-tests/obj/
