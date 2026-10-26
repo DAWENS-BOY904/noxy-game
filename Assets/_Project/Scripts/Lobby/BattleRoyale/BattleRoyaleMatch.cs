@@ -192,10 +192,17 @@ namespace Noxy.Lobby
                 yield break;
             }
             if (ps.Result.Value == null || ps.Result.Value.server == null ||
-                ps.Result.Value.you == null || ps.Result.Value.waiting == null ||
+                ps.Result.Value.you == null || ps.Result.Value.waiting == null || ps.Result.Value.times == null ||
+                ps.Result.Value.players == null || ps.Result.Value.events == null ||
                 string.IsNullOrEmpty(ps.Result.Value.server.host) || ps.Result.Value.server.port < 1 || ps.Result.Value.server.port > 65535)
             {
-                Fail("The match assignment has no valid game-server address. Return to the lobby and retry; if this continues, contact the server operator.");
+                Fail("The match assignment is incomplete or has no valid game-server address. Return to the lobby and retry; if this continues, contact the server operator.");
+                yield break;
+            }
+            var assignedPhase = BattleRoyaleSession.ParsePhase(ps.Result.Value.status);
+            if (assignedPhase == BrPhase.None)
+            {
+                Fail("The match server returned an unknown match phase. Return to the lobby and retry.");
                 yield break;
             }
             session.Apply(ps.Result.Value, NowMs());
