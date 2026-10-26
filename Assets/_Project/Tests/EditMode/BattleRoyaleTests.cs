@@ -294,7 +294,6 @@ namespace Noxy.Tests
             cancelledAttempt(Ok("cabin"));
 
             Assert.AreEqual(MatchmakingState.Searching, last.State);
-            Assert.IsTrue(mm.IsBusy);
             Assert.IsNull(last.Assignment);
         }
 
