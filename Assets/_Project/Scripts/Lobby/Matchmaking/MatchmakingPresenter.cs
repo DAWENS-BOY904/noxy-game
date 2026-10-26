@@ -38,6 +38,12 @@ namespace Noxy.Lobby
         private void OnDestroy()
         {
             if (controller != null) controller.StatusChanged -= OnStatus;
+            if (overlay != null)
+            {
+                overlay.CancelClicked -= OnCancel;
+                overlay.RetryClicked -= OnRetry;
+                overlay.CloseClicked -= OnClose;
+            }
         }
 
         private void Update()
@@ -147,6 +153,12 @@ namespace Noxy.Lobby
             }
 
             var op = SceneManager.LoadSceneAsync(assignment.SceneName);
+            if (op == null)
+            {
+                loadingScene = false;
+                AppServices.Matchmaking.Fail(MatchmakingError.SceneLoadFailed, $"Unity could not begin loading scene '{assignment.SceneName}'.");
+                return;
+            }
             while (op != null && !op.isDone)
             {
                 overlay.SetLoadingProgress(op.progress / 0.9f);

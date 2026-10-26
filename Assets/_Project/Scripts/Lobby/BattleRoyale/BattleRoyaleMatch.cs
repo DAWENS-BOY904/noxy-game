@@ -134,14 +134,25 @@ namespace Noxy.Lobby
         private IEnumerator Run()
         {
             // 1. connect: config, map identity, and the match this player was placed in
-            if (!svc.IsAvailable) { Fail(svc.UnavailableReason); yield break; }
+            if (!svc.IsAvailable)
+            {
+                Debug.LogWarning("[Noxy BR] state=authentication_unavailable", this);
+                Fail(svc.UnavailableReason);
+                yield break;
+            }
             float requestStartedAt = Now();
             var pc = new Pending<BrConfigDto>(); svc.LoadConfig(pc.Set);
             yield return Wait(pc);
             if (Aborted) yield break;
             LogStartupRequest("connecting_lobby_backend", requestStartedAt, pc.Result);
+            if (pc.Result == null) { Fail("No response was received from the match backend. Please retry."); yield break; }
             if (!pc.Result.Ok) { Fail("Couldn't reach the match server: " + pc.Result.Friendly); yield break; }
-            if (pc.Result.Value == null) { Fail("The match server returned an empty configuration. Please retry."); yield break; }
+            if (pc.Result.Value == null || pc.Result.Value.cabin == null || pc.Result.Value.ground == null ||
+                pc.Result.Value.freefall == null || pc.Result.Value.parachute == null)
+            {
+                Fail("The match server returned incomplete match configuration. Check the server configuration and retry.");
+                yield break;
+            }
             cfg = pc.Result.Value; loading.Report(LoadStage.ConnectingServer, 0.4f, Now());
 
             requestStartedAt = Now();
@@ -149,6 +160,7 @@ namespace Noxy.Lobby
             yield return Wait(pm);
             if (Aborted) yield break;
             LogStartupRequest("loading_map_identity", requestStartedAt, pm.Result);
+            if (pm.Result == null) { Fail("No map response was received from the match backend. Please retry."); yield break; }
             if (!pm.Result.Ok) { Fail("Couldn't read the map version: " + pm.Result.Friendly); yield break; }
             info = pm.Result.Value;
             if (info == null || string.IsNullOrEmpty(info.mapId) || string.IsNullOrEmpty(info.hash))
@@ -168,12 +180,18 @@ namespace Noxy.Lobby
             yield return Wait(ps);
             if (Aborted) yield break;
             LogStartupRequest("validating_match_assignment", requestStartedAt, ps.Result);
+            if (ps.Result == null) { Fail("No match assignment response was received. Return to the lobby and retry."); yield break; }
             if (!ps.Result.Ok)
             {
-                Fail(ps.Result.Code == "not_in_match" || ps.Result.Code == "no_match" ? "You are not in a match. Go back to the lobby and press PLAY." : "Couldn't join the match: " + ps.Result.Friendly);
+                Fail(ps.Result.Code == "not_in_match" || ps.Result.Code == "no_match"
+                    ? "You are not in a match. Go back to the lobby and press PLAY."
+                    : ps.Result.Status == 401
+                        ? "Your account session was rejected. Sign in again in Settings > Account, then retry."
+                        : "Couldn't join the match: " + ps.Result.Friendly);
                 yield break;
             }
             if (ps.Result.Value == null || ps.Result.Value.server == null ||
+                ps.Result.Value.you == null || ps.Result.Value.waiting == null ||
                 string.IsNullOrEmpty(ps.Result.Value.server.host) || ps.Result.Value.server.port < 1 || ps.Result.Value.server.port > 65535)
             {
                 Fail("The match assignment has no valid game-server address. Return to the lobby and retry; if this continues, contact the server operator.");

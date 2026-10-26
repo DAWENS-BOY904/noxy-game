@@ -167,13 +167,18 @@ namespace Noxy.Core
         public RemoteBattleRoyaleService(ApiClient api) { this.api = api; }
         public bool SignedIn { get; set; }
         public Func<string> UnavailableDetail;
+        public Action OnUnauthorized;
         public bool IsAvailable => SignedIn;
         public string UnavailableReason => SignedIn ? "" : (UnavailableDetail?.Invoke() ?? CommunityText.OfflineReason);
 
         private void Call<T>(string method, string path, Dictionary<string, object> body, Action<ApiResult<T>> done) where T : class, new()
         {
             if (!SignedIn) { done?.Invoke(new ApiResult<T> { Ok = false, Code = "offline", Message = UnavailableReason }); return; }
-            api.Request<T>(method, path, body, done);
+            api.Request<T>(method, path, body, result =>
+            {
+                if (result.Status == 401) OnUnauthorized?.Invoke();
+                done?.Invoke(result);
+            });
         }
         private static Dictionary<string, object> D(params object[] kv)
         {
@@ -470,7 +475,13 @@ namespace Noxy.Core
                     return;
                 }
                 Debug.Log($"[Noxy BR] state=requesting_matchmaking elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s http={r.Status} code={SafeCode(r.Code)}");
-                if (!r.Ok) { active = false; Emit(MatchmakingState.Failed, r.Friendly, 0f, r.Code == "no_server_available" || r.NetworkError ? MatchmakingError.ServerUnavailable : MatchmakingError.ModeUnavailable); return; }
+                if (!r.Ok)
+                {
+                    active = false;
+                    string message = r.Status == 401 ? "Your account session was rejected. Sign in again in Settings > Account, then retry." : r.Friendly;
+                    Emit(MatchmakingState.Failed, message, 0f, r.Code == "no_server_available" || r.NetworkError ? MatchmakingError.ServerUnavailable : MatchmakingError.ModeUnavailable);
+                    return;
+                }
                 Handle(r.Value);
             });
         }
@@ -507,7 +518,10 @@ namespace Noxy.Core
                 {
                     Debug.LogWarning($"[Noxy BR] state=waiting_for_match elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s http={r.Status} code={SafeCode(r.Code)}");
                     if (r.NetworkError && ++networkFailures < 8) { Emit(MatchmakingState.Searching, "Connection is slow, retrying...", 0.1f); return; }
-                    active = false; Emit(MatchmakingState.Failed, r.Friendly, 0f, MatchmakingError.ServerUnavailable); return;
+                    active = false;
+                    string message = r.Status == 401 ? "Your account session was rejected. Sign in again in Settings > Account, then retry." : r.Friendly;
+                    Emit(MatchmakingState.Failed, message, 0f, MatchmakingError.ServerUnavailable);
+                    return;
                 }
                 networkFailures = 0;
                 Handle(r.Value);

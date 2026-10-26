@@ -83,6 +83,7 @@ namespace Noxy.Lobby
             var supabase = SupabaseConfigLoader.Load();
             Auth = new AuthService(new SupabaseAuthClient(new UnityWebRequestTransport(), supabase), new PrefsSessionStore(), supabase);
             Account.OnUnauthorized = () => Auth.Revalidate();
+            brService.OnUnauthorized = () => Auth.Revalidate();
             Auth.Changed += () => AccountBridge.Apply(Auth);
             OAuthLauncher.Initialize();
 
