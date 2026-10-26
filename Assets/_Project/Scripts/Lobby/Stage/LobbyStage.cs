@@ -20,7 +20,7 @@ namespace Noxy.Lobby
 
         public static LobbyStage Create()
         {
-            var existing = FindObjectOfType<LobbyStage>();
+            var existing = FindAnyObjectByType<LobbyStage>();
             if (existing != null) return existing;
             var go = new GameObject("LobbyStage");
             return go.AddComponent<LobbyStage>();
