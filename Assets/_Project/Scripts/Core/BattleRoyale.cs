@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace Noxy.Core
 {
@@ -307,7 +308,7 @@ namespace Noxy.Core
     public sealed class LoadingProgress
     {
         public static readonly float[] Weights = { 0.10f, 0.25f, 0.40f, 0.20f, 0.05f };
-        public static readonly float[] StageTimeoutSeconds = { 15f, 240f, 90f, 30f, 20f };
+        public static readonly float[] StageTimeoutSeconds = { 35f, 240f, 90f, 30f, 20f };
         public const float SlowAfterSeconds = 8f;
 
         private readonly float[] progress = new float[5];
@@ -333,7 +334,12 @@ namespace Noxy.Core
             }
         }
 
-        public void Begin(float now) { lastAdvanceAt = now; Slow = false; }
+        public void Begin(float now)
+        {
+            lastAdvanceAt = now;
+            Slow = false;
+            Report(LoadStage.ConnectingServer, 0f, now);
+        }
 
         /// <summary>Reports measured progress for a stage (0..1). Progress never goes backwards.</summary>
         public void Report(LoadStage stage, float value, float now)
@@ -433,6 +439,8 @@ namespace Noxy.Core
         private float poll;
         private bool active, inFlight;
         private int networkFailures;
+        private int attemptId;
+        private float attemptStartedAt;
         private GameModeDefinition mode;
 
         public BattleRoyaleMatchmakingService(IBattleRoyaleService service) { svc = service; }
@@ -445,13 +453,17 @@ namespace Noxy.Core
 
         public void Begin(GameModeDefinition m, MatchmakingRequest request)
         {
+            int attempt = ++attemptId;
             mode = m; active = true; inFlight = true; networkFailures = 0; poll = 0f;
+            attemptStartedAt = Time.realtimeSinceStartup;
             if (!svc.IsAvailable) { active = false; inFlight = false; Emit(MatchmakingState.Failed, svc.UnavailableReason, 0f, MatchmakingError.ServerUnavailable); return; }
             Emit(MatchmakingState.Searching, LoadingProgress.StageMessage(LoadStage.ConnectingServer), 0.05f);
             svc.Queue(m.Id, r =>
             {
+                if (attempt != attemptId) return;
                 inFlight = false;
                 if (!active) return;
+                Debug.Log($"[Noxy BR] state=requesting_matchmaking elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s http={r.Status} code={SafeCode(r.Code)}");
                 if (!r.Ok) { active = false; Emit(MatchmakingState.Failed, r.Friendly, 0f, r.Code == "no_server_available" || r.NetworkError ? MatchmakingError.ServerUnavailable : MatchmakingError.ModeUnavailable); return; }
                 Handle(r.Value);
             });
@@ -460,7 +472,9 @@ namespace Noxy.Core
         public void Cancel()
         {
             if (!active) return;
+            ++attemptId;
             active = false;
+            inFlight = false;
             svc.LeaveQueue(_ => { });   // best effort; the server also drops stale waiting players
             Emit(MatchmakingState.Cancelled, "Left the queue.");
         }
@@ -471,12 +485,15 @@ namespace Noxy.Core
             poll += dt;
             if (poll < PollSeconds) return;
             poll = 0f; inFlight = true;
+            int attempt = attemptId;
             svc.GetState(0, r =>
             {
+                if (attempt != attemptId) return;
                 inFlight = false;
                 if (!active) return;
                 if (!r.Ok)
                 {
+                    Debug.LogWarning($"[Noxy BR] state=waiting_for_match elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s http={r.Status} code={SafeCode(r.Code)}");
                     if (r.NetworkError && ++networkFailures < 8) { Emit(MatchmakingState.Searching, "Connection is slow, retrying...", 0.1f); return; }
                     active = false; Emit(MatchmakingState.Failed, r.Friendly, 0f, MatchmakingError.ServerUnavailable); return;
                 }
@@ -487,6 +504,13 @@ namespace Noxy.Core
 
         private void Handle(BrStateDto s)
         {
+            if (s == null)
+            {
+                active = false;
+                Emit(MatchmakingState.Failed, "The matchmaking service returned an empty match assignment. Please retry.", 0f, MatchmakingError.ServerUnavailable);
+                return;
+            }
+            Debug.Log($"[Noxy BR] state=matchmaking_assignment elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s phase={s.status} players={s.waiting?.players ?? 0}/{s.waiting?.minPlayers ?? 0} assignment={(string.IsNullOrEmpty(s.server?.host) ? "missing" : "received")}");
             switch (BattleRoyaleSession.ParsePhase(s.status))
             {
                 case BrPhase.Waiting:
@@ -505,6 +529,9 @@ namespace Noxy.Core
                     break;
             }
         }
+
+        private static string SafeCode(string code) =>
+            string.IsNullOrEmpty(code) ? "none" : code.Length <= 48 ? code : code.Substring(0, 48);
     }
 
     /// <summary>Keeps the Battle Royale mode honest: it is playable only while the backend lists a verified online server.</summary>
