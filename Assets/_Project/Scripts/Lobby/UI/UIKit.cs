@@ -115,7 +115,11 @@ namespace Noxy.Lobby
 
             var view = img.gameObject.AddComponent<ButtonView>();
             view.Init(button, img, text);
-            if (onClick != null) button.onClick.AddListener(onClick);
+            if (onClick != null)
+            {
+                button.onClick.AddListener(LobbyAudioService.PlayUiClick);
+                button.onClick.AddListener(onClick);
+            }
             return view;
         }
 

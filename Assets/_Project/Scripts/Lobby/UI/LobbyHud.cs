@@ -116,6 +116,7 @@ namespace Noxy.Lobby
             AppServices.Modes.SelectionChanged += OnModeChanged;
             AppServices.Social.Changed += RefreshParty;
             AppServices.Account.Changed += RefreshParty;
+            AppServices.Account.Changed += RefreshProfile;
 
             RefreshProfile();
             RefreshNotifications();
@@ -125,6 +126,7 @@ namespace Noxy.Lobby
 
         private void OnModeChanged(GameModeDefinition mode)
         {
+            LobbyAudioService.PlayModeSelect();
             RefreshModes();
             RefreshParty();
 
@@ -140,7 +142,7 @@ namespace Noxy.Lobby
             if (AppServices.Profile != null) AppServices.Profile.ProfileChanged -= RefreshProfile;
             if (AppServices.Modes != null) AppServices.Modes.SelectionChanged -= OnModeChanged;
             if (AppServices.Social != null) AppServices.Social.Changed -= RefreshParty;
-            if (AppServices.Account != null) AppServices.Account.Changed -= RefreshParty;
+            if (AppServices.Account != null) { AppServices.Account.Changed -= RefreshParty; AppServices.Account.Changed -= RefreshProfile; }
             if (AppServices.Notifications != null)
             {
                 AppServices.Notifications.Changed -= RefreshNotifications;

@@ -26,6 +26,7 @@ namespace Noxy.Lobby
             rig.Initialize(cam);
 
             LobbyStage.Create();
+            var background = LobbyBackground.Create(cam, BackgroundLibrary.Lobby);
 
             var previewGo = new GameObject("CharacterPreview");
             var preview = previewGo.AddComponent<CharacterPreview>();
@@ -79,10 +80,19 @@ namespace Noxy.Lobby
             screens.Register(LobbyScreen.Create<HudEditorScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<NotificationsScreen>(ctx, safeRoot));
             screens.ShowInitial();
+            screens.Changed += (from, to) => background.SetKey(to == LobbyScreenId.Lobby || to == LobbyScreenId.Vault || to == LobbyScreenId.Profile
+                ? BackgroundLibrary.Lobby : BackgroundLibrary.Menu);
 
             // Dialog and matchmaking overlays must render above every screen.
             overlay.transform.SetAsLastSibling();
+
+            // The sign-in gate covers the lobby until a session is verified or the player chooses offline.
+            var gate = AuthGate.Create(canvasRoot, background);
             ctx.Dialog.transform.SetAsLastSibling();
+            if (AppServices.Auth.State == Noxy.Core.AuthState.SignedIn) gate.gameObject.SetActive(false);
+            else AuthGate.Show();
+            ctx.Dialog.transform.SetAsLastSibling();
+            AppServices.Auth.Restore();
         }
 
         private static void ConfigurePlatform()

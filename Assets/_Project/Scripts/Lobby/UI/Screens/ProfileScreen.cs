@@ -198,6 +198,8 @@ namespace Noxy.Lobby
             });
         }
 
+        private bool reportOpen;
+
         private void Build()
         {
             UIKit.DestroyChildren(content);
@@ -232,8 +234,32 @@ namespace Noxy.Lobby
             {
                 Action(actions, "BLOCK", UITheme.Button, () => Ctx.Confirm("Block player", $"Block {p.username}? You will no longer see each other.", "BLOCK",
                     () => AppServices.Social.Block(p.publicId, r => { Report(r, "Player blocked."); if (r.Success) Ctx.Screens.Back(); }), true));
-                Action(actions, "REPORT", UITheme.Button, () => Ctx.Confirm("Report player", $"Report {p.username} for abusive behaviour?", "REPORT",
-                    () => AppServices.Social.Report(p.publicId, "Reported from profile", r => Report(r, "Report sent. Thank you."))));
+                Action(actions, "REPORT", UITheme.Button, () => { reportOpen = !reportOpen; Build(); });
+            }
+
+            if (reportOpen && p.relationship != "self")
+            {
+                UIWidgets.SectionTitle(content, "Report " + p.username);
+                UIWidgets.Paragraph(content, "Choose what you saw. Reports are reviewed; nobody is punished automatically from a single report.", UITheme.TextDim);
+                var cats = new[]
+                {
+                    ("Using aimbot / auto-aim", "aimbot"), ("Abnormal headshots", "abnormal_headshots"),
+                    ("Shooting through barriers", "shoots_through_walls"), ("Walking through barriers", "walks_through_walls"),
+                    ("Abnormal movement / speed", "abnormal_movement"), ("Seeing through walls", "wallhack"),
+                    ("Abusive chat", "abusive_chat"), ("Offensive name", "offensive_name"),
+                };
+                foreach (var (label, key) in cats)
+                {
+                    var row = UIKit.NewRect("Cat", content);
+                    UIKit.HStack(row.gameObject, 8f).childForceExpandWidth = true;
+                    UIKit.SetLayout(row.gameObject, preferredHeight: 60f);
+                    var cat = key;
+                    Action(row, label.ToUpperInvariant(), UITheme.Button, () =>
+                    {
+                        reportOpen = false;
+                        AppServices.Social.Report(p.publicId, label, r => { Report(r, "Report sent. Thank you."); Build(); }, cat);
+                    });
+                }
             }
 
             UIWidgets.SectionTitle(content, "Statistics");

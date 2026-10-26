@@ -4,6 +4,8 @@ using UnityEngine;
 
 namespace Noxy.Lobby
 {
+    public enum TargetKind { Static, Moving, Popup }
+
     /// <summary>Practice target: takes damage, flashes, and respawns. Purely local; there is no networking here.</summary>
     public sealed class TargetDummy : MonoBehaviour
     {
@@ -20,10 +22,19 @@ namespace Noxy.Lobby
 
         public bool IsAlive => health > 0f;
 
+        public TargetKind Kind = TargetKind.Static;
+        public float MoveRange = 4f, MoveSpeed = 1.5f;
+        private Vector3 home;
+        private float phase;
+        private float popTimer;
+        private bool popped = true;
+
         public event Action<TargetDummy> Died;
 
         private void Awake()
         {
+            home = transform.position;
+            phase = UnityEngine.Random.value * 6.28f;
             renderers = GetComponentsInChildren<Renderer>();
             colliders = GetComponentsInChildren<Collider>();
             if (renderers.Length > 0) { material = renderers[0].material; baseColor = material.HasProperty("_Color") ? material.color : Color.white; }
@@ -32,7 +43,7 @@ namespace Noxy.Lobby
         /// <returns>true when this hit killed the target</returns>
         public bool ApplyDamage(float amount)
         {
-            if (!IsAlive) return false;
+            if (!IsAlive || !popped) return false;
             health -= amount;
             flashTimer = 0.12f;
             if (health > 0f) return false;
@@ -54,10 +65,22 @@ namespace Noxy.Lobby
             if (!IsAlive)
             {
                 respawnTimer -= Time.deltaTime;
-                if (respawnTimer <= 0f) { health = MaxHealth; SetVisible(true); }
+                if (respawnTimer <= 0f) { health = MaxHealth; popped = true; popTimer = 2f; SetVisible(true); }
                 return;
             }
 
+            if (Kind == TargetKind.Moving)
+                transform.position = home + Vector3.right * Mathf.Sin(Time.time * MoveSpeed + phase) * MoveRange;
+            else if (Kind == TargetKind.Popup)
+            {
+                popTimer -= Time.deltaTime;
+                if (popTimer <= 0f)
+                {
+                    popped = !popped;
+                    popTimer = popped ? 2.2f : 1.4f;
+                    SetVisible(popped);
+                }
+            }
             if (material == null) return;
             flashTimer = Mathf.Max(0f, flashTimer - Time.deltaTime);
             MaterialFactory.SetColor(material, flashTimer > 0f ? Color.white : baseColor);
@@ -79,7 +102,8 @@ namespace Noxy.Lobby
         private LineRenderer tracer;
         private float tracerTimer;
         private float yaw, pitch, verticalVelocity, currentFov = 60f, cameraDistance = 3.2f;
-        private bool crouching;
+        private bool crouching, moving;
+        private readonly RecoilModel recoil = new RecoilModel();
 
         public WeaponInventory Weapons { get; } = new WeaponInventory();
         public HudControlsView Touch;
@@ -88,8 +112,11 @@ namespace Noxy.Lobby
         public bool Aiming { get; private set; }
         public int Shots { get; private set; }
         public int Hits { get; private set; }
+        public float CurrentSpreadDegrees => recoil.Spread(moving, Aiming, crouching);
 
         public event Action<bool> HitRegistered;      // true when the hit killed the target
+        /// <summary>Raised for every bullet: whether it hit a target, the zone, the distance and whether it killed.</summary>
+        public event Action<bool, HitZone, float, bool> ShotResolved;
         public event Action<string> Message;
 
         public float Yaw => yaw;
@@ -141,6 +168,7 @@ namespace Noxy.Lobby
             float dt = Time.deltaTime;
 
             Weapons.Tick(dt);
+            pitch = Mathf.Clamp(pitch + recoil.Tick(dt), -45f, 70f); // camera settles back after a burst
             if (tracer.enabled)
             {
                 tracerTimer -= dt;
@@ -174,6 +202,7 @@ namespace Noxy.Lobby
             if (InputCompat.KeyHeld(keys.Get(GameAction.MoveLeft))) move.x -= 1f;
             if (touch != null) move += touch.Move;
             move = Vector2.ClampMagnitude(move, 1f);
+            moving = move.sqrMagnitude > 0.01f;
 
             crouching = InputCompat.KeyHeld(keys.Get(GameAction.Crouch)) || (touch != null && touch.CrouchToggled);
             bool sprint = !crouching && (InputCompat.KeyHeld(keys.Get(GameAction.Sprint)) || (touch != null && touch.Sprint)) && move.y > 0.1f;
@@ -264,6 +293,15 @@ namespace Noxy.Lobby
             float skip = Vector3.Distance(cam.transform.position, pivot) + 0.2f; // start beyond the player's own collider
             Vector3 origin = cam.transform.position + dir * skip;
             float range = weapon.Range;
+            bool ranged = weapon.Slot != WeaponSlot.Melee;
+            if (ranged)
+            {
+                // Random point inside the firing cone; bloom grows while firing and while moving.
+                float cone = Mathf.Tan(recoil.Spread(moving, Aiming, crouching) * Mathf.Deg2Rad);
+                Vector2 off = UnityEngine.Random.insideUnitCircle * cone;
+                dir = (dir + cam.transform.right * off.x + cam.transform.up * off.y).normalized;
+                pitch = Mathf.Clamp(pitch - recoil.OnShot(Aiming), -45f, 70f);
+            }
 
             Vector3 end = origin + dir * range;
             if (Physics.Raycast(origin, dir, out var hit, range, ~0, QueryTriggerInteraction.Ignore))
@@ -273,10 +311,14 @@ namespace Noxy.Lobby
                 if (dummy != null)
                 {
                     Hits++;
-                    bool killed = dummy.ApplyDamage(Damage(weapon));
+                    var zone = hit.collider.name == "Head" ? HitZone.Head : HitZone.Body;
+                    bool killed = dummy.ApplyDamage(HitZones.Damage(Damage(weapon), zone));
                     HitRegistered?.Invoke(killed);
+                    ShotResolved?.Invoke(true, zone, hit.distance, killed);
                 }
+                else ShotResolved?.Invoke(false, HitZone.Body, hit.distance, false);
             }
+            else ShotResolved?.Invoke(false, HitZone.Body, range, false);
 
             if (weapon.Slot != WeaponSlot.Melee)
             {

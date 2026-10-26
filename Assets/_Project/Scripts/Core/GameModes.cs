@@ -81,7 +81,7 @@ namespace Noxy.Core
                     RequiresDedicatedServer = false,
                     OfflineSceneName = TrainingSceneName,
                     Availability = ModeAvailability.Available,
-                    StatusNote = "Offline prototype - placeholder range, no gameplay yet."
+                    StatusNote = "Offline local practice range - no human opponents or online progression."
                 }
             };
         }

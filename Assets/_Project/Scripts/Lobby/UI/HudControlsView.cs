@@ -156,10 +156,13 @@ namespace Noxy.Lobby
             }
         }
 
-        public void SetLayout(HudLayout layout)
+        public void SetLayout(HudLayout layout) => SetLayout(layout, safeSize);
+
+        /// <summary>Use this overload when the safe area just changed (e.g. orientation) so the new layout is clamped against the right size.</summary>
+        public void SetLayout(HudLayout layout, Vector2 newSafeSize)
         {
             Layout = layout;
-            Relayout(safeSize);
+            Relayout(newSafeSize);
         }
 
         public void SetSelected(HudElementId? id)

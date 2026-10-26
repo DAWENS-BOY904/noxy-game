@@ -65,8 +65,22 @@ namespace Noxy.Lobby
             filterButton = UIKit.NewButton(row, "Filter", "SHOW: ALL", UITheme.Button, () => { filterMode = (filterMode + 1) % FilterLabels.Length; RebuildTiles(); }, 18);
             UIKit.SetLayout(filterButton.gameObject, preferredWidth: 150f, flexibleWidth: 0f);
 
+            var looks = UIKit.NewRect("LooksRow", parent);
+            UIKit.Anchor(looks, new Vector2(0f, 1f), Vector2.one, new Vector2(0.5f, 1f), new Vector2(0f, -126f), new Vector2(0f, 52f));
+            UIKit.HStack(looks.gameObject, 6f).childForceExpandWidth = true;
+            var rnd = UIKit.NewButton(looks, "Random", "RANDOM", UITheme.Button, Randomize, 18);
+            UIKit.SetLayout(rnd.gameObject, minWidth: 0f, flexibleWidth: 1.2f);
+            for (int i = 0; i < LoadoutTools.PresetCount; i++)
+            {
+                int slot = i;
+                var b = UIKit.NewButton(looks, "Look" + i, "LOOK " + (i + 1), UITheme.Button, () => LoadLook(slot), 18);
+                UIKit.SetLayout(b.gameObject, minWidth: 0f, flexibleWidth: 1f);
+            }
+            var save = UIKit.NewButton(looks, "SaveLook", "SAVE LOOK", UITheme.Cyan, SaveLookPrompt, 18);
+            UIKit.SetLayout(save.gameObject, minWidth: 0f, flexibleWidth: 1.3f);
+
             var scroll = UIKit.NewScroll(parent, "Items", out gridContent);
-            UIKit.Stretch((RectTransform)scroll.transform, 0f, 172f, 0f, 130f);
+            UIKit.Stretch((RectTransform)scroll.transform, 0f, 234f, 0f, 130f);
             UIKit.NewGrid(gridContent.gameObject, 10f);
             var rg = gridContent.gameObject.AddComponent<ResponsiveGrid>();
             rg.MinCellWidth = 140f;
@@ -240,6 +254,49 @@ namespace Noxy.Lobby
                 info.text = "Previewing changes. Drag the character to inspect, then press EQUIP." + online;
             else
                 info.text = "Pick an item to try it on. Drag the character to rotate it." + online;
+        }
+
+        private const string LooksKey = "noxy.looks";
+        private int lookTarget;
+
+        private HashSet<string> OwnedSet() => new HashSet<string>(AppServices.Profile.Profile.ownedCosmeticIds);
+
+        private void Randomize()
+        {
+            if (draft == null) return;
+            draft = LoadoutTools.Randomize(AppServices.Catalog, OwnedSet(), new System.Random());
+            Ctx.Preview.ShowLoadout(draft);
+            RebuildTiles();
+            RefreshState();
+        }
+
+        // Selecting a look slot both loads it (when saved) and makes it the target of SAVE LOOK.
+        private void LoadLook(int slot)
+        {
+            if (draft == null) return;
+            lookTarget = slot;
+            var presets = LoadoutPresets.Deserialize(PlayerPrefs.GetString(LooksKey, ""));
+            var look = presets.Load(slot, AppServices.Catalog, OwnedSet());
+            if (look == null)
+            {
+                info.text = "Look " + (slot + 1) + " is empty. Build an outfit and press SAVE LOOK.";
+                return;
+            }
+            draft = look;
+            Ctx.Preview.ShowLoadout(draft);
+            RebuildTiles();
+            RefreshState();
+            info.text = "Loaded look " + (slot + 1) + ". " + info.text;
+        }
+
+        private void SaveLookPrompt()
+        {
+            if (draft == null) return;
+            var presets = LoadoutPresets.Deserialize(PlayerPrefs.GetString(LooksKey, ""));
+            presets.Save(lookTarget, draft);
+            PlayerPrefs.SetString(LooksKey, presets.Serialize());
+            PlayerPrefs.Save();
+            AppServices.Notifications.Post("Look saved", "Saved to look " + (lookTarget + 1) + " on this device.", NotificationSeverity.Success);
         }
 
         private void Revert()

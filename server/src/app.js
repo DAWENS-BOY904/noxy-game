@@ -23,6 +23,9 @@ const DEFAULT_CONFIG = {
   idGenerator: () => String(crypto.randomInt(1_000_000_000, 10_000_000_000)),
 };
 
+const CHEAT_CATEGORIES = ['aimbot', 'wallhack', 'speed_hack', 'abnormal_headshots', 'shoots_through_walls', 'walks_through_walls', 'abnormal_movement'];
+const REPORT_CATEGORIES = [...CHEAT_CATEGORIES, 'abusive_chat', 'offensive_name', 'afk', 'other'];
+
 class ApiError extends Error {
   constructor(status, code, message, extra) {
     super(message);
@@ -39,6 +42,16 @@ function createApp(options = {}) {
   const db = new DatabaseSync(options.dbPath || ':memory:');
   db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
   db.exec(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+  // Dev databases created before report categories existed.
+  if (!db.prepare('PRAGMA table_info(reports)').all().some((c) => c.name === 'category')) {
+    db.exec("ALTER TABLE reports ADD COLUMN category TEXT NOT NULL DEFAULT 'other'");
+  }
+  db.exec(`CREATE TABLE IF NOT EXISTS cheat_strikes (
+    player_id INTEGER PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+    strikes   INTEGER NOT NULL DEFAULT 0,
+    flagged   INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  )`);
 
   const q = {
     one: (sql, ...p) => db.prepare(sql).get(...p),
@@ -423,7 +436,20 @@ function createApp(options = {}) {
     const p = playerByPublicId(params.publicId);
     if (!p || p.id === me.id) fail(404, 'player_not_found', 'Player not found.');
     const reason = requireString(body.reason, 'reason', 3, 300);
-    q.run('INSERT INTO reports(reporter_id, target_id, reason, created_at) VALUES (?,?,?,?)', me.id, p.id, reason, now());
+    const category = body.category === undefined ? 'other' : String(body.category);
+    if (!REPORT_CATEGORIES.includes(category)) fail(400, 'invalid_category', 'Unknown report category.');
+    const dayAgo = now() - 86400000;
+    const dup = q.one('SELECT 1 AS x FROM reports WHERE reporter_id=? AND target_id=? AND category=? AND created_at>?', me.id, p.id, category, dayAgo);
+    if (dup) return { status: 200, body: { ok: true, duplicate: true } };
+    q.run('INSERT INTO reports(reporter_id, target_id, reason, category, created_at) VALUES (?,?,?,?,?)', me.id, p.id, reason, category, now());
+    // Reports only queue a review. Distinct reporters on a cheat category raise a strike; nobody is auto-banned here.
+    if (CHEAT_CATEGORIES.includes(category)) {
+      const distinct = q.one('SELECT COUNT(DISTINCT reporter_id) AS n FROM reports WHERE target_id=? AND category IN (' + CHEAT_CATEGORIES.map(() => '?').join(',') + ') AND created_at>?',
+        p.id, ...CHEAT_CATEGORIES, dayAgo).n;
+      if (distinct >= 3) {
+        q.run('INSERT INTO cheat_strikes(player_id, strikes, flagged, updated_at) VALUES (?,1,1,?) ON CONFLICT(player_id) DO UPDATE SET flagged=1, updated_at=excluded.updated_at', p.id, now());
+      }
+    }
     return { status: 201, body: { ok: true } };
   });
 

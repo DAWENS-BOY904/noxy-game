@@ -21,6 +21,10 @@ namespace Noxy.Lobby
         public static OfflineMatchmakingService OfflineMatchmaking { get; private set; }
         public static NotificationService Notifications { get; private set; }
         public static AccountService Account { get; private set; }
+        public static AuthService Auth { get; private set; }
+        public static INativeSignIn NativeSignIn { get; set; }
+        /// <summary>True when the player chose to continue without an account. Never means "signed in".</summary>
+        public static bool OfflineMode { get; set; }
         public static ISocialService Social { get; private set; }
 
         public static bool IsInitialized => Profile != null;
@@ -29,7 +33,8 @@ namespace Noxy.Lobby
         private static void ResetStatics()
         {
             Catalog = null; Profile = null; Config = null; Modes = null; Matchmaking = null;
-            OfflineMatchmaking = null; Notifications = null; Account = null; Social = null;
+            OfflineMatchmaking = null; Notifications = null; Account = null; Social = null; Auth = null;
+            OfflineMode = false; NativeSignIn = null;
         }
 
         public static void EnsureInitialized()
@@ -45,6 +50,7 @@ namespace Noxy.Lobby
             DisplayApplier.ApplyFirstRunDefaults(Config);
             DisplayApplier.Apply(Config.Settings);
             Config.Changed += OnConfigChanged;
+            LobbyAudioService.Ensure().ApplySettings(Config.Settings);
 
             var tokens = new PrefsTokenStore();
             string url = string.IsNullOrEmpty(tokens.LoadServerUrl()) ? DefaultServerUrl : tokens.LoadServerUrl();
@@ -52,6 +58,11 @@ namespace Noxy.Lobby
             var remote = new RemoteSocialService(api);
             Social = remote;
             Account = new AccountService(api, Profile, Config, Notifications, remote, tokens);
+
+            var supabase = SupabaseConfigLoader.Load();
+            Auth = new AuthService(new SupabaseAuthClient(new UnityWebRequestTransport(), supabase), new PrefsSessionStore(), supabase);
+            Auth.Changed += () => AccountBridge.Apply(Auth);
+            OAuthLauncher.Initialize();
 
             var modes = DefaultGameModes.Create();
             foreach (var mode in modes)
@@ -82,6 +93,10 @@ namespace Noxy.Lobby
             Account.TryRestoreSession();
         }
 
-        private static void OnConfigChanged() => DisplayApplier.Apply(Config.Settings);
+        private static void OnConfigChanged()
+        {
+            DisplayApplier.Apply(Config.Settings);
+            LobbyAudioService.Ensure().ApplySettings(Config.Settings);
+        }
     }
 }

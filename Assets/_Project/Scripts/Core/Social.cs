@@ -137,6 +137,13 @@ namespace Noxy.Core
         void Send(string method, string url, string jsonBody, string bearerToken, Action<HttpResponse> done);
     }
 
+    /// <summary>Transport that can also send extra headers (Supabase needs an <c>apikey</c> header).</summary>
+    public interface IHeaderTransport : ITransport
+    {
+        void SendWithHeaders(string method, string url, string jsonBody, string bearerToken,
+            IDictionary<string, string> headers, Action<HttpResponse> done);
+    }
+
     public sealed class ApiResult<T> where T : class
     {
         public bool Ok;
@@ -251,7 +258,7 @@ namespace Noxy.Core
         void RemoveFriend(string publicId, Action<ServiceResult> done);
         void Block(string publicId, Action<ServiceResult> done);
         void Unblock(string publicId, Action<ServiceResult> done);
-        void Report(string publicId, string reason, Action<ServiceResult> done);
+        void Report(string publicId, string reason, Action<ServiceResult> done, string category = "other");
         void Invite(string publicId, string modeId, Action<ServiceResult> done);
         void RespondToInvitation(int invitationId, bool accept, Action<ServiceResult> done);
         void LeaveParty(Action<ServiceResult> done);
@@ -280,7 +287,7 @@ namespace Noxy.Core
         public void RemoveFriend(string publicId, Action<ServiceResult> done) => done?.Invoke(Unavailable);
         public void Block(string publicId, Action<ServiceResult> done) => done?.Invoke(Unavailable);
         public void Unblock(string publicId, Action<ServiceResult> done) => done?.Invoke(Unavailable);
-        public void Report(string publicId, string reason, Action<ServiceResult> done) => done?.Invoke(Unavailable);
+        public void Report(string publicId, string reason, Action<ServiceResult> done, string category = "other") => done?.Invoke(Unavailable);
         public void Invite(string publicId, string modeId, Action<ServiceResult> done) => done?.Invoke(Unavailable);
         public void RespondToInvitation(int invitationId, bool accept, Action<ServiceResult> done) => done?.Invoke(Unavailable);
         public void LeaveParty(Action<ServiceResult> done) => done?.Invoke(Unavailable);
@@ -377,10 +384,10 @@ namespace Noxy.Core
         public void Unblock(string publicId, Action<ServiceResult> done) =>
             Act<OkDto>("DELETE", "/api/blocks/" + Uri.EscapeDataString(publicId), null, done);
 
-        public void Report(string publicId, string reason, Action<ServiceResult> done)
+        public void Report(string publicId, string reason, Action<ServiceResult> done, string category = "other")
         {
             if (!SignedIn) { done?.Invoke(ServiceResult.Fail("Not signed in.")); return; }
-            api.Request<OkDto>("POST", $"/api/players/{Uri.EscapeDataString(publicId)}/report", new Dictionary<string, object> { ["reason"] = reason }, r => done?.Invoke(ToResult(r)));
+            api.Request<OkDto>("POST", $"/api/players/{Uri.EscapeDataString(publicId)}/report", new Dictionary<string, object> { ["reason"] = reason, ["category"] = category }, r => done?.Invoke(ToResult(r)));
         }
 
         public void Invite(string publicId, string modeId, Action<ServiceResult> done)

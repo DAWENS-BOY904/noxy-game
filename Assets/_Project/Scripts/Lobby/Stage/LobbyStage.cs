@@ -3,8 +3,8 @@ using UnityEngine;
 namespace Noxy.Lobby
 {
     /// <summary>
-    /// Procedural lobby environment: lights, a glowing platform, a night skyline, light beams and
-    /// floating particles. Everything is generated in code so no external art is required.
+    /// Procedural lobby foreground: lights, a glowing platform, light beams and floating particles.
+    /// The backdrop is NOT part of the stage: it is an image drawn by LobbyBackground (see BackgroundLibrary).
     /// </summary>
     public sealed class LobbyStage : MonoBehaviour
     {
@@ -28,7 +28,6 @@ namespace Noxy.Lobby
         {
             BuildLighting();
             BuildPlatform();
-            BuildBackdrop();
             BuildBeams();
             BuildShards();
             BuildParticles();
@@ -70,9 +69,6 @@ namespace Noxy.Lobby
 
         private void BuildPlatform()
         {
-            var floorMat = MaterialFactory.Lit(new Color(0.05f, 0.06f, 0.09f), 0.6f, 0.85f);
-            MaterialFactory.Primitive(PrimitiveType.Cylinder, "Floor", transform, new Vector3(0f, -0.06f, -6f), new Vector3(60f, 0.05f, 60f), floorMat);
-
             var platMat = MaterialFactory.Lit(new Color(0.08f, 0.1f, 0.15f), 0.7f, 0.8f);
             MaterialFactory.Primitive(PrimitiveType.Cylinder, "Platform", transform, new Vector3(0f, -0.07f, 0f), new Vector3(3.2f, 0.07f, 3.2f), platMat);
 
@@ -116,36 +112,6 @@ namespace Noxy.Lobby
             var glow = MaterialFactory.Primitive(PrimitiveType.Quad, "GroundGlow", transform, new Vector3(0f, 0.01f, 0f), new Vector3(5.5f, 5.5f, 1f), groundGlow);
             glow.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
             NoShadow(glow);
-        }
-
-        private void BuildBackdrop()
-        {
-            var sky = MaterialFactory.Primitive(PrimitiveType.Quad, "Sky", transform, new Vector3(0f, 8f, -26f), new Vector3(140f, 60f, 1f),
-                MaterialFactory.UnlitTexture(ProceduralTextures.Sky));
-            sky.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
-            NoShadow(sky);
-
-            backGlow = MaterialFactory.Glow(ProceduralTextures.RadialGlow, new Color(0.15f, 0.55f, 0.8f, 0.5f));
-            var halo = MaterialFactory.Primitive(PrimitiveType.Quad, "BackGlow", transform, new Vector3(0f, 2.2f, -7f), new Vector3(15f, 15f, 1f), backGlow);
-            halo.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
-            NoShadow(halo);
-
-            // Skyline silhouettes with a thin lit roof edge.
-            var rng = new System.Random(7);
-            var buildingMat = MaterialFactory.Unlit(new Color(0.025f, 0.04f, 0.075f));
-            var edgeMat = MaterialFactory.Unlit(new Color(0.12f, 0.45f, 0.65f));
-            float x = -42f;
-            while (x < 42f)
-            {
-                float w = 2f + (float)rng.NextDouble() * 3.5f;
-                float h = 3f + (float)rng.NextDouble() * 11f;
-                float z = -18f - (float)rng.NextDouble() * 3f;
-                var b = MaterialFactory.Primitive(PrimitiveType.Cube, "Building", transform, new Vector3(x + w * 0.5f, h * 0.5f - 0.2f, z), new Vector3(w, h, 1f), buildingMat);
-                var roof = MaterialFactory.Primitive(PrimitiveType.Cube, "RoofEdge", transform, new Vector3(x + w * 0.5f, h - 0.2f, z + 0.52f), new Vector3(w, 0.06f, 0.05f), edgeMat);
-                NoShadow(b);
-                NoShadow(roof);
-                x += w + 0.25f + (float)rng.NextDouble() * 0.8f;
-            }
         }
 
         private void BuildBeams()

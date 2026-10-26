@@ -132,8 +132,8 @@ namespace Noxy.Lobby
         {
             layout = AppServices.Config.LoadHud(Ctx.Portrait, Ctx.Size);
             original = layout.Clone();
-            editView.SetLayout(layout);
-            previewView.SetLayout(layout);
+            editView.SetLayout(layout, Ctx.Size);
+            previewView.SetLayout(layout, Ctx.Size);
             editView.SetSelected(null);
             ApplyMode();
             RefreshState();
@@ -202,8 +202,8 @@ namespace Noxy.Lobby
             {
                 layout = HudLayout.CreateDefault(Ctx.Portrait);
                 layout.Sanitize(Ctx.Size);
-                editView.SetLayout(layout);
-                previewView.SetLayout(layout);
+                editView.SetLayout(layout, Ctx.Size);
+                previewView.SetLayout(layout, Ctx.Size);
                 editView.SetSelected(null);
                 RefreshState();
             });

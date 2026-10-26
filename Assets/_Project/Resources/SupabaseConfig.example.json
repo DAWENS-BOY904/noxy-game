@@ -1,0 +1,5 @@
+{
+  "url": "https://YOUR-PROJECT-REF.supabase.co",
+  "anonKey": "YOUR-PUBLIC-ANON-KEY (never the service_role key)",
+  "redirectUrl": ""
+}

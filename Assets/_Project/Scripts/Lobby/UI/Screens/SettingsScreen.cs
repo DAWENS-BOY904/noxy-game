@@ -29,6 +29,7 @@ namespace Noxy.Lobby
 
         // Account tab state
         private InputField urlInput, userInput, passInput;
+        private InputField guestEmail, guestPass;
         private Text accountMessage;
         private string pendingMessage = "";
 
@@ -47,11 +48,18 @@ namespace Noxy.Lobby
             UIKit.VStack(content.gameObject, 10f);
 
             AppServices.Account.Changed += OnAccountChanged;
+            AppServices.Auth.Changed += OnAuthChanged;
         }
 
         private void OnDestroy()
         {
             if (AppServices.Account != null) AppServices.Account.Changed -= OnAccountChanged;
+            if (AppServices.Auth != null) AppServices.Auth.Changed -= OnAuthChanged;
+        }
+
+        private void OnAuthChanged()
+        {
+            if (visible && tab == 6 && !(guestEmail != null && (guestEmail.isFocused || guestPass.isFocused))) BuildTab();
         }
 
         private void OnAccountChanged()
@@ -269,7 +277,7 @@ namespace Noxy.Lobby
             ToggleRow("Mute music", () => S.musicMuted, v => S.musicMuted = v);
             ToggleRow("Mute sound effects", () => S.sfxMuted, v => S.sfxMuted = v);
             ToggleRow("Mute voice chat", () => S.voiceMuted, v => S.voiceMuted = v);
-            Note("Master volume works now. The project has no music, effects or voice-chat audio yet; these levels are stored and ready for those systems to use.");
+            Note("UI feedback uses original generated tones and follows Master / Sound effects. Lobby music is ready at Resources/Audio/LobbyMusic; no music clip is included. Voice chat audio is not implemented.");
         }
 
         private void BuildGameplay()
@@ -430,10 +438,11 @@ namespace Noxy.Lobby
 
         private void BuildAccount()
         {
+            BuildGameAccount();
             var acct = AppServices.Account;
             if (acct.State == AccountState.SignedIn) { BuildSignedIn(acct); return; }
 
-            UIWidgets.SectionTitle(content, "Account");
+            UIWidgets.SectionTitle(content, "Local development server");
             Note("You are using the offline profile on this device. Sign in to get a permanent Player ID, friends, parties and synced settings. " +
                  "Online features need the development server (see server/README).");
 
@@ -467,6 +476,100 @@ namespace Noxy.Lobby
 
             accountMessage = Note(string.IsNullOrEmpty(pendingMessage) ? acct.LastError : pendingMessage, UITheme.Warning);
             Note("Your password is sent to the server over the address above. Use https:// for anything that isn't your own computer or home network.");
+        }
+
+        private static string ProviderName(string id) =>
+            id == "google" ? "Google" : id == "apple" ? "Apple" : id == "email" ? "E-mail" : id;
+
+        /// <summary>Supabase account: Player ID, linked sign-in methods, guest upgrade and sign-out.</summary>
+        private void BuildGameAccount()
+        {
+            var auth = AppServices.Auth;
+            UIWidgets.SectionTitle(content, "Game account");
+
+            if (auth.State != AuthState.SignedIn || auth.Session == null || auth.Player == null)
+            {
+                Note(auth.State == AuthState.NotConfigured
+                    ? "Online accounts are not configured in this build, so you are playing offline."
+                    : "You are playing offline. Sign in to keep one Player ID and your progress on every device.", UITheme.Warning);
+                if (auth.State != AuthState.NotConfigured)
+                    ActionButton("SIGN IN / CREATE ACCOUNT", UITheme.Accent, () => AuthGate.Show());
+                return;
+            }
+
+            var s = auth.Session;
+            UIWidgets.KeyValueRow(content, "Username", auth.Player.Username, UITheme.Text);
+            UIWidgets.KeyValueRow(content, "Player ID", auth.Player.PlayerId, UITheme.Cyan);
+            UIWidgets.KeyValueRow(content, "Sign-in", s.IsAnonymous ? "Guest (not linked yet)" : string.Join(", ", s.Providers.ConvertAll(ProviderName)), UITheme.Text);
+            if (!string.IsNullOrEmpty(s.Email)) UIWidgets.KeyValueRow(content, "E-mail", s.Email, UITheme.TextDim);
+
+            ActionButton("COPY PLAYER ID", UITheme.Button, () =>
+            {
+                GUIUtility.systemCopyBuffer = auth.Player.PlayerId;
+                AppServices.Notifications.Post("Copied", "Player ID copied.", NotificationSeverity.Success);
+            });
+
+            if (s.IsAnonymous)
+                Note("Guest progress lives only in this sign-in. Link Google, Apple or an e-mail now so you can recover it on another device. Linking keeps your Player ID.", UITheme.Warning);
+
+            if (auth.HasPendingOAuth)
+            {
+                Note("Waiting for the browser to finish... Return to the game when you are done.", UITheme.Cyan);
+                ActionButton("CANCEL LINKING", UITheme.Button, () => { OAuthLauncher.Cancel(); auth.CancelOAuth(); });
+            }
+            else
+            {
+                foreach (var provider in new[] { "google", "apple" })
+                {
+                    if (s.Providers.Contains(provider)) continue;
+                    var id = provider;
+                    ActionButton("LINK " + ProviderName(id).ToUpperInvariant(), UITheme.Button, () => Ctx.Confirm(
+                        "Link " + ProviderName(id),
+                        "You will be sent to " + ProviderName(id) + " to sign in. That sign-in is added to THIS account (Player ID " + auth.Player.PlayerId +
+                        "). Accounts are never merged by e-mail address. If that " + ProviderName(id) + " account already has its own Noxy account, linking is refused " +
+                        "and nothing changes: sign out and sign in with it directly instead.",
+                        "CONTINUE", () => StartLink(id)));
+                }
+            }
+
+            if (s.IsAnonymous)
+            {
+                var emailRow = NewRow(76f);
+                RowLabel(emailRow, "E-mail");
+                guestEmail = UIForm.NewInput(emailRow, "GuestEmail", "you@example.com", InputField.ContentType.EmailAddress, 120);
+                UIKit.SetLayout(guestEmail.gameObject, preferredWidth: 420f, preferredHeight: 56f, flexibleWidth: 0f);
+                var passRow2 = NewRow(76f);
+                RowLabel(passRow2, "Password");
+                guestPass = UIForm.NewInput(passRow2, "GuestPass", "At least 8 characters", InputField.ContentType.Password, 128);
+                UIKit.SetLayout(guestPass.gameObject, preferredWidth: 420f, preferredHeight: 56f, flexibleWidth: 0f);
+                ActionButton("UPGRADE GUEST WITH E-MAIL", UITheme.Button, () => auth.UpgradeGuestWithEmail(guestEmail.text, guestPass.text, r =>
+                {
+                    AppServices.Notifications.Post(r.Ok ? "Account upgraded" : "Couldn't upgrade", r.Ok ? "Your guest account now has an e-mail sign-in." : r.Message,
+                        r.Ok ? NotificationSeverity.Success : NotificationSeverity.Error);
+                    if (visible) BuildTab();
+                }));
+            }
+
+            if (!string.IsNullOrEmpty(auth.Notice)) Note(auth.Notice, UITheme.Success);
+            if (!string.IsNullOrEmpty(auth.LastError) && auth.LastErrorKind != AuthErrorKind.Cancelled) Note(auth.LastError, UITheme.Warning);
+
+            ActionButton("SIGN OUT", UITheme.Button, () => Ctx.Confirm("Sign out",
+                "Sign out of your game account on this device? Your progress stays on your account.", "SIGN OUT", () =>
+                {
+                    OAuthLauncher.Cancel();
+                    auth.SignOut();
+                    AuthGate.Show();
+                }));
+        }
+
+        private void StartLink(string provider)
+        {
+            AppServices.Auth.BeginLink(provider, r =>
+            {
+                if (r.Ok) OAuthLauncher.Open(r.Url);
+                else AppServices.Notifications.Post("Couldn't link " + ProviderName(provider), r.Message, NotificationSeverity.Error);
+                if (visible) BuildTab();
+            });
         }
 
         private void Authenticate(bool register)

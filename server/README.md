@@ -25,7 +25,7 @@ allow the port in the Windows firewall), then create an account.
 
 ```powershell
 cd server
-node --test --no-warnings test/*.test.js     # 27 tests
+node --test --no-warnings test/*.test.js     # 28 tests
 ```
 
 The client library is also tested against this server: see `../tools/core-tests` (`dotnet test`).

@@ -12,17 +12,23 @@ using Noxy.Core;
 namespace Noxy.IntegrationTests
 {
     /// <summary>Blocking HttpClient transport (completes the callback before returning), for tests only.</summary>
-    public sealed class HttpClientTransport : ITransport
+    public sealed class HttpClientTransport : IHeaderTransport
     {
         private static readonly HttpClient Client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
         public void Send(string method, string url, string jsonBody, string bearerToken, Action<HttpResponse> done)
+            => SendWithHeaders(method, url, jsonBody, bearerToken, null, done);
+
+        public void SendWithHeaders(string method, string url, string jsonBody, string bearerToken,
+            IDictionary<string, string> headers, Action<HttpResponse> done)
         {
             var response = new HttpResponse();
             try
             {
                 var req = new HttpRequestMessage(new HttpMethod(method), url);
                 if (!string.IsNullOrEmpty(bearerToken)) req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + bearerToken);
+                if (headers != null)
+                    foreach (var h in headers) req.Headers.TryAddWithoutValidation(h.Key, h.Value);
                 if (jsonBody != null) req.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
                 using var res = Client.Send(req);
                 using var reader = new StreamReader(res.Content.ReadAsStream());

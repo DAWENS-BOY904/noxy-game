@@ -32,6 +32,11 @@ namespace Noxy.Lobby
         private void Update()
         {
             if (AppServices.Account != null) AppServices.Account.Tick(Time.unscaledDeltaTime);
+            if (AppServices.Auth != null)
+            {
+                OAuthLauncher.Pump(AppServices.Auth);
+                AppServices.Auth.Tick();
+            }
         }
 
         private void OnApplicationPause(bool paused)
@@ -43,16 +48,23 @@ namespace Noxy.Lobby
     }
 
     /// <summary>ITransport over UnityWebRequest. Callbacks run on the main thread.</summary>
-    public sealed class UnityWebRequestTransport : ITransport
+    public sealed class UnityWebRequestTransport : IHeaderTransport
     {
         private const int TimeoutSeconds = 10;
 
         public void Send(string method, string url, string jsonBody, string bearerToken, Action<HttpResponse> done)
         {
-            AppRunner.Ensure().StartCoroutine(Run(method, url, jsonBody, bearerToken, done));
+            AppRunner.Ensure().StartCoroutine(Run(method, url, jsonBody, bearerToken, null, done));
         }
 
-        private static IEnumerator Run(string method, string url, string jsonBody, string token, Action<HttpResponse> done)
+        public void SendWithHeaders(string method, string url, string jsonBody, string bearerToken,
+            System.Collections.Generic.IDictionary<string, string> headers, Action<HttpResponse> done)
+        {
+            AppRunner.Ensure().StartCoroutine(Run(method, url, jsonBody, bearerToken, headers, done));
+        }
+
+        private static IEnumerator Run(string method, string url, string jsonBody, string token,
+            System.Collections.Generic.IDictionary<string, string> headers, Action<HttpResponse> done)
         {
             var response = new HttpResponse();
             using (var request = new UnityWebRequest(url, method))
@@ -65,6 +77,8 @@ namespace Noxy.Lobby
                     request.SetRequestHeader("Content-Type", "application/json");
                 }
                 if (!string.IsNullOrEmpty(token)) request.SetRequestHeader("Authorization", "Bearer " + token);
+                if (headers != null)
+                    foreach (var h in headers) request.SetRequestHeader(h.Key, h.Value);
 
                 yield return request.SendWebRequest();
 

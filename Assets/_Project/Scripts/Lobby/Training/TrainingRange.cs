@@ -26,6 +26,10 @@ namespace Noxy.Lobby
         private bool touchEnabled;
         private bool paused;
         private int kills;
+        private readonly TrainingDrill drill = new TrainingDrill(60f);
+        private const string BestScoreKey = "noxy.training.best";
+        private bool wasInZone;
+        private Text drillText;
 
         private Text weaponText, ammoText, scoreText, messageText, hintText;
         private Image reloadFill;
@@ -121,30 +125,45 @@ namespace Noxy.Lobby
             var zone = Solid(PrimitiveType.Cylinder, "TrainingZone", ObjectivePosition + Vector3.up * 0.02f, new Vector3(6f, 0.02f, 6f), new Color(0.18f, 0.88f, 1f), false);
             Destroy(zone.GetComponent<Collider>());
 
-            // Target lanes at increasing distance.
+            // Target lanes at increasing distance: static, strafing and pop-up targets.
             float[] distances = { 10f, 15f, 20f, 28f, 36f };
             for (int i = 0; i < distances.Length; i++)
             {
                 float x = (i % 2 == 0 ? -1f : 1f) * (2f + i * 1.5f);
-                AddTarget(new Vector3(x, 0f, 6f + distances[i]));
+                var kind = i % 3 == 1 ? TargetKind.Moving : i % 3 == 2 ? TargetKind.Popup : TargetKind.Static;
+                AddTarget(new Vector3(x, 0f, 6f + distances[i]), kind);
             }
-            AddTarget(new Vector3(-18f, 1.5f, 16f));
+            AddTarget(new Vector3(-18f, 1.5f, 16f), TargetKind.Static);
+            AddTarget(new Vector3(14f, 0f, 30f), TargetKind.Moving);
+            AddTarget(new Vector3(-10f, 0f, 38f), TargetKind.Popup);
+            AddTarget(new Vector3(8f, 0f, 22f), TargetKind.Popup);
         }
 
-        private void AddTarget(Vector3 pos)
+        private void AddTarget(Vector3 pos, TargetKind kind)
         {
             var root = new GameObject("TargetDummy");
             root.transform.SetParent(transform, false);
             root.transform.position = pos;
 
+            var tint = kind == TargetKind.Moving ? new Color(0.85f, 0.7f, 0.15f) : kind == TargetKind.Popup ? new Color(0.25f, 0.65f, 0.85f) : new Color(0.8f, 0.35f, 0.2f);
+            var mat = MaterialFactory.Lit(tint, 0f, 0.3f);
+
             var bodyGo = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             bodyGo.transform.SetParent(root.transform, false);
-            bodyGo.transform.localPosition = new Vector3(0f, 1f, 0f);
-            bodyGo.transform.localScale = new Vector3(0.8f, 1f, 0.8f);
-            var mat = MaterialFactory.Lit(new Color(0.8f, 0.35f, 0.2f), 0f, 0.3f);
+            bodyGo.transform.localPosition = new Vector3(0f, 0.8f, 0f);
+            bodyGo.transform.localScale = new Vector3(0.8f, 0.8f, 0.8f);
             bodyGo.GetComponent<Renderer>().sharedMaterial = mat;
 
+            // The collider is named "Head"; PlayerController treats hits on it as headshots.
+            var headGo = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            headGo.name = "Head";
+            headGo.transform.SetParent(root.transform, false);
+            headGo.transform.localPosition = new Vector3(0f, 1.8f, 0f);
+            headGo.transform.localScale = new Vector3(0.4f, 0.4f, 0.4f);
+            headGo.GetComponent<Renderer>().sharedMaterial = MaterialFactory.Lit(new Color(0.95f, 0.9f, 0.8f), 0f, 0.3f);
+
             var dummy = root.AddComponent<TargetDummy>();
+            dummy.Kind = kind;
             dummy.Died += _ => { kills++; };
             targets.Add(dummy);
         }
@@ -162,6 +181,7 @@ namespace Noxy.Lobby
             player.Setup(cam, view);
             player.Message += ShowMessage;
             player.HitRegistered += killed => { hitTimer = 0.18f; if (killed) ShowMessage("Target down"); };
+            player.ShotResolved += OnShotResolved;
         }
 
         // ---------- HUD ----------
@@ -242,6 +262,10 @@ namespace Noxy.Lobby
 
             messageText = UIKit.NewText(hudRoot, "", UITheme.FontBody, UITheme.Warning, TextAnchor.MiddleCenter, FontStyle.Bold, "Message");
             UIKit.Anchor(messageText.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -150f), new Vector2(700f, 50f));
+
+            drillText = UIKit.NewText(hudRoot, "", 22, UITheme.Cyan, TextAnchor.UpperCenter, FontStyle.Bold, "Drill");
+            UIKit.Anchor(drillText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -132f), new Vector2(760f, 64f));
+            UIKit.FitText(drillText, 14);
         }
 
         private void BuildCrosshair()
@@ -428,6 +452,60 @@ namespace Noxy.Lobby
                 hitTimer = Mathf.Max(0f, hitTimer - Time.unscaledDeltaTime);
                 hitMarker.color = new Color(1f, 0.3f, 0.3f, hitTimer > 0f ? 0.8f : 0f);
             }
+
+            UpdateCrosshairSpread();
+            UpdateDrill();
+        }
+
+        // ---------- crosshair and drill ----------
+
+        private void UpdateCrosshairSpread()
+        {
+            if (crosshair == null) return;
+            float gap = 10f + Mathf.Min(player.CurrentSpreadDegrees, 4f) * 12f;
+            Vector2[] dirs = { Vector2.up, Vector2.down, Vector2.right, Vector2.left };
+            for (int i = 0; i < 4; i++)
+                crosshair[i].rectTransform.anchoredPosition = Vector2.Lerp(crosshair[i].rectTransform.anchoredPosition, dirs[i] * gap, 0.4f);
+        }
+
+        private void OnShotResolved(bool hit, HitZone zone, float distance, bool killed)
+        {
+            if (hit)
+            {
+                int pts = drill.RegisterHit(zone, distance, killed);
+                if (pts > 0) ShowMessage((zone == HitZone.Head ? "HEADSHOT +" : "+") + pts);
+            }
+            else drill.RegisterMiss();
+        }
+
+        private void UpdateDrill()
+        {
+            Vector3 p = player.transform.position;
+            bool inZone = Vector2.Distance(new Vector2(p.x, p.z), new Vector2(ObjectivePosition.x, ObjectivePosition.z)) < 3f;
+            if (inZone && !wasInZone && !drill.Running)
+            {
+                drill.Start();
+                ShowMessage("Drill started: 60 seconds");
+            }
+            wasInZone = inZone;
+
+            bool wasRunning = drill.Running;
+            if (!paused) drill.Tick(Time.deltaTime);
+            if (wasRunning && drill.Finished)
+            {
+                int best = PlayerPrefs.GetInt(BestScoreKey, 0);
+                bool record = drill.Score > best;
+                if (record) { PlayerPrefs.SetInt(BestScoreKey, drill.Score); PlayerPrefs.Save(); }
+                ShowMessage("Drill over: " + drill.Score + " pts, rank " + TrainingDrill.RankFor(drill.Score) + (record ? " (new best)" : ""));
+                messageTimer = 8f;
+            }
+
+            if (drill.Running)
+                drillText.text = "DRILL " + Mathf.CeilToInt(drill.Remaining) + "s   SCORE " + drill.Score + "   COMBO x" + drill.Combo + "\nACC " + Mathf.RoundToInt(drill.Accuracy * 100f) + "%   HEADSHOTS " + drill.Headshots;
+            else if (drill.Finished)
+                drillText.text = "LAST DRILL " + drill.Score + " pts (" + TrainingDrill.RankFor(drill.Score) + ")   BEST " + PlayerPrefs.GetInt(BestScoreKey, 0) + "\nStep out and back into the cyan zone to retry";
+            else
+                drillText.text = "Walk into the cyan zone to start a 60 s accuracy drill   BEST " + PlayerPrefs.GetInt(BestScoreKey, 0);
         }
     }
 }

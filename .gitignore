@@ -32,3 +32,7 @@ node_modules/
 tools/core-tests/bin/
 tools/core-tests/obj/
 !tools/core-tests/CoreTests.csproj
+
+# Local Supabase config (public URL/key only, but per-environment)
+Assets/_Project/Resources/SupabaseConfig.json
+Assets/_Project/Resources/SupabaseConfig.json.meta

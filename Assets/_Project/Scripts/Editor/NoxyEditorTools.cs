@@ -35,6 +35,23 @@ namespace Noxy.EditorTools
             Debug.Log("[Noxy] Scenes created: " + LobbyScenePath + " and " + TrainingScenePath + ". Press Play to try the lobby.");
         }
 
+        [MenuItem("Noxy/Export Placeholder Backgrounds")]
+        public static void ExportPlaceholderBackgrounds()
+        {
+            const string dir = "Assets/_Project/Resources/Backgrounds";
+            Directory.CreateDirectory(dir);
+            foreach (var key in new[] { BackgroundLibrary.Lobby, BackgroundLibrary.Menu, BackgroundLibrary.Auth })
+            {
+                var path = dir + "/" + key + ".png";
+                if (File.Exists(path)) continue; // never overwrite real art
+                var tex = BackgroundLibrary.GeneratePlaceholder(key, 1920, 1080);
+                File.WriteAllBytes(path, tex.EncodeToPNG());
+                Object.DestroyImmediate(tex);
+            }
+            AssetDatabase.Refresh();
+            Debug.Log("Placeholder backgrounds are in " + dir + ". Replace the PNGs with your own art (same names).");
+        }
+
         [MenuItem("Noxy/Open Main Lobby")]
         public static void OpenLobby()
         {

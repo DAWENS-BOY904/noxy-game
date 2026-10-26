@@ -94,3 +94,4 @@ C:\Users\Dawens\OneDrive\Desktop\noxy\tools\core-tests\obj\Debug\net8.0\refint\C
 C:\Users\Dawens\OneDrive\Desktop\noxy\tools\core-tests\obj\Debug\net8.0\CoreTests.pdb
 C:\Users\Dawens\OneDrive\Desktop\noxy\tools\core-tests\obj\Debug\net8.0\CoreTests.genruntimeconfig.cache
 C:\Users\Dawens\OneDrive\Desktop\noxy\tools\core-tests\obj\Debug\net8.0\ref\CoreTests.dll
+C:\Users\Dawens\OneDrive\Desktop\noxy\tools\core-tests\obj\Debug\net8.0\CoreTests.sourcelink.json

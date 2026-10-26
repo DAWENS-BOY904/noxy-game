@@ -473,6 +473,25 @@ test('username change rules, delete account requires password and cascades', asy
   } finally { await s.close(); }
 });
 
+test('cheat reports: categories, dedupe, flag after distinct reporters', async () => {
+  const s = await startServer();
+  try {
+    const t = await s.register('target_x');
+    const rs = [await s.register('rep_one'), await s.register('rep_two'), await s.register('rep_three')];
+    const url = `/api/players/${t.me.publicId}/report`;
+    const bad = await s.call('POST', url, { token: rs[0].token, body: { reason: 'cheating', category: 'nonsense' } });
+    assert.equal(bad.status, 400);
+    const first = await s.call('POST', url, { token: rs[0].token, body: { reason: 'looks like aimbot', category: 'aimbot' } });
+    assert.equal(first.status, 201);
+    const dup = await s.call('POST', url, { token: rs[0].token, body: { reason: 'looks like aimbot', category: 'aimbot' } });
+    assert.equal(dup.status, 200);
+    assert.equal(dup.body.duplicate, true);
+    assert.equal((await s.call('POST', url, { token: rs[1].token, body: { reason: 'shot through wall', category: 'shoots_through_walls' } })).status, 201);
+    assert.equal((await s.call('POST', url, { token: rs[2].token, body: { reason: 'abnormal headshots', category: 'abnormal_headshots' } })).status, 201);
+    assert.equal(s.app.db.prepare('SELECT flagged FROM cheat_strikes').get().flagged, 1);
+  } finally { await s.close(); }
+});
+
 test('report, bad JSON, oversized body, unknown routes', async () => {
   const s = await startServer();
   try {
