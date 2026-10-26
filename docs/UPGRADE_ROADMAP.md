@@ -18,6 +18,7 @@
 | 3. Weapon customization/progression | Define attachment compatibility against actual meshes and weapon definitions; persist progression and validate all XP/stats/rewards server-side. | Weapon data and skins exist; attachments and weapon mastery are not implemented. |
 | 4. Lone Wolf and Training | Keep Lone Wolf unavailable until server matchmaking and authoritative round rules/results exist. Continue local-only Training drills and label them clearly. | Training prototype has local targets and drill scoring; Lone Wolf and match results are unavailable. |
 | 5. Missions, rewards, emotes | Extend existing mission/reward screens only with validated backend claim paths; add original emote assets and favorites when clips exist. | Existing local/dev systems and placeholder emotes only; production progression is pending. |
+| 5b. Battle Royale match flow | Server-side match authority, island, client flow and HUD written; see `BATTLE_ROYALE.md`. | Server rules tested over HTTP; Unity side compile-checked only; no dedicated server, no real-time netcode, no safe zone. |
 | 6. Multiplayer and release hardening | Build an authoritative dedicated server, platform-native sign-in and secure token storage; validate on Windows, Android and iOS, then profile and optimize on devices. | Not implemented or platform-tested. |
 
 ## Stage 1 audio details

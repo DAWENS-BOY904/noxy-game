@@ -85,6 +85,23 @@ namespace Noxy.Core
             Changed?.Invoke();
         }
 
+        /// <summary>Online matches: overwrite a slot with what the server says the player owns (null clears it).</summary>
+        public void SetAuthoritative(WeaponSlot slot, WeaponDefinition def, int magazine, int reserve)
+        {
+            slots[(int)slot] = def == null ? null : new Slot { Def = def, Magazine = magazine, Reserve = reserve };
+            if (!HasWeapon(Selected))
+                for (int i = 0; i < slots.Length; i++) if (slots[i] != null) { Selected = (WeaponSlot)i; break; }
+            Changed?.Invoke();
+        }
+
+        /// <summary>Online matches: the server's selected slot wins over local prediction.</summary>
+        public void SelectAuthoritative(WeaponSlot slot)
+        {
+            if (!HasWeapon(slot) || slot == Selected) return;
+            Selected = slot; reloadTimer = 0f; switchTimer = 0f;
+            Changed?.Invoke();
+        }
+
         public SwitchResult TrySwitch(WeaponSlot slot)
         {
             if (!HasWeapon(slot)) return SwitchResult.SlotEmpty;

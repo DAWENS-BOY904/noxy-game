@@ -199,9 +199,10 @@ function create(ctx) {
 
   function exitPlane(m, p, at) {
     const plane = planeAt(m, at);
-    // the player leaves from where they stood in the cabin: local +x is the plane's forward direction, local +z its right
+    // the player leaves from where they stood in the cabin. Cabin axes follow Unity: local +x is the plane's forward direction
+    // and local +z points to its LEFT (rotating +x by the heading, then the left-handed +z)
     const h = m.route.headingDeg * Math.PI / 180, lx = p.x, lz = p.z;
-    p.x = plane.x + lx * Math.sin(h) + lz * Math.cos(h); p.z = plane.z + lx * Math.cos(h) - lz * Math.sin(h); p.y = plane.y - 2;
+    p.x = plane.x + lx * Math.sin(h) - lz * Math.cos(h); p.z = plane.z + lx * Math.cos(h) + lz * Math.sin(h); p.y = plane.y - 2;
     p.space = 'world'; p.state = 'freefall'; p.jumpedAt = at; p.moveAt = at; p.anim = 'freefall'; p.vy = 0;
     emit(m, 'jump', { player: p.publicId, forced: p.forced });
   }

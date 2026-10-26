@@ -27,5 +27,6 @@
     <Compile Include="SupabaseBridgeTests.cs" />
     <Compile Include="MapExportTests.cs" />
     <Compile Include="BattleRoyaleIntegrationTests.cs" />
+    <Compile Include="ArchitectureTests.cs" />
   </ItemGroup>
 </Project>

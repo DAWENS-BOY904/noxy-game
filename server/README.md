@@ -29,6 +29,8 @@ Environment: `PORT`, `HOST` (default `127.0.0.1`), `DB_PATH`.
 ### Dedicated-server registry
 `NOXY_MATCH_SERVER_KEY` enables the game-server endpoints. `NOXY_SERVER_TTL_SECONDS` (default 30) is the heartbeat timeout; `NOXY_SERVER_PROBE=tcp` additionally requires a TCP connect to the registered address to succeed. See [docs/SUPABASE_AUDIT.md](../docs/SUPABASE_AUDIT.md#server-registry).
 
+Battle Royale: `NOXY_BR_CONFIG` (JSON, dev only) overrides the match rules in `src/br.js` (for example `minPlayers` for solo testing); `tools/dev-br-server/register.mjs` registers a dev stand-in so the queue is allowed. Neither is a dedicated server. See [docs/BATTLE_ROYALE.md](../docs/BATTLE_ROYALE.md).
+
 In the game: **Settings > Account**, enter the server address (for a phone use `http://<your-PC-LAN-IP>:8787`,
 allow the port in the Windows firewall), then create an account.
 

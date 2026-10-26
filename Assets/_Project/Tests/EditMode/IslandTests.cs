@@ -82,10 +82,20 @@ namespace Noxy.Tests
             {
                 var b = layout.Buildings.Find(x => x.Id == s.BuildingId);
                 Assert.IsNotNull(b);
-                Assert.Less(new MapPoint(s.X, s.Z).DistanceTo(new MapPoint(b.X, b.Z)), Math.Sqrt(b.Width * b.Width + b.Depth * b.Depth) * 0.5 + 0.1);
-                Assert.GreaterOrEqual(s.Y, b.BaseY);
-                Assert.LessOrEqual(s.Y, b.BaseY + b.Floors * 3.2f + 0.5f);
-            }
+                double reach = Math.Sqrt(b.Width * b.Width + b.Depth * b.Depth) * 0.5;
+                if (b.HasInterior)
+                {
+                    Assert.Less(new MapPoint(s.X, s.Z).DistanceTo(new MapPoint(b.X, b.Z)), reach + 0.1);
+                    Assert.GreaterOrEqual(s.Y, b.BaseY);
+                    Assert.LessOrEqual(s.Y, b.BaseY + b.Floors * 3.2f + 0.5f);
+                }
+                else
+                {
+                    // solid block: the crate stands outside, on the ground beside the door, never inside the walls
+                    Assert.Greater(new MapPoint(s.X, s.Z).DistanceTo(new MapPoint(b.X, b.Z)),                     Math.Min(b.Width, b.Depth) * 0.5, s.Id + " is inside a solid building");
+                                        Assert.Less(Math.Abs(s.Y - layout.HeightAt(s.X, s.Z)), 0.6f);
+                                    }
+                                }
             Assert.AreEqual(layout.Loot.Count, layout.Loot.Select(s => s.Id).Distinct().Count(), "ids are unique");
         }
 

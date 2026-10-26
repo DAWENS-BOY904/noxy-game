@@ -60,6 +60,12 @@ namespace Noxy.Core
         public int sensTouch = 50;
         public int sensHorizontal = 100;      // percent multipliers
         public int sensVertical = 100;
+        // Look feel (all default to off so existing behaviour is unchanged)
+        public int mouseSmoothing;            // 0-100: how much the mouse is smoothed (100 = about 80 ms)
+        public int touchSmoothing;            // 0-100
+        public int touchAcceleration;         // 0-100: fast swipes turn further (100 = up to 2x)
+        public bool gyroEnabled;              // mobile only, needs a gyroscope
+        public int sensGyro = 50;             // same 1-200 scale as the other sliders
 
         // Privacy and social (mirrored to the backend when signed in)
         public int friendRequests = (int)Visibility.Everyone;   // Everyone | Nobody
@@ -95,6 +101,10 @@ namespace Noxy.Core
             sensTouch = Mathf.Clamp(sensTouch, SensitivityModel.MinSlider, SensitivityModel.MaxSlider);
             sensHorizontal = Mathf.Clamp(sensHorizontal, 20, 200);
             sensVertical = Mathf.Clamp(sensVertical, 20, 200);
+            mouseSmoothing = Mathf.Clamp(mouseSmoothing, 0, 100);
+            touchSmoothing = Mathf.Clamp(touchSmoothing, 0, 100);
+            touchAcceleration = Mathf.Clamp(touchAcceleration, 0, 100);
+            sensGyro = Mathf.Clamp(sensGyro, SensitivityModel.MinSlider, SensitivityModel.MaxSlider);
 
             friendRequests = friendRequests == (int)Visibility.Nobody ? (int)Visibility.Nobody : (int)Visibility.Everyone;
             partyInvites = partyInvites == (int)Visibility.Nobody ? (int)Visibility.Nobody : (int)Visibility.Friends;
@@ -122,6 +132,8 @@ namespace Noxy.Core
             damageIndicators = B("damageIndicators", damageIndicators); autoPickup = B("autoPickup", autoPickup); invertY = B("invertY", invertY);
             sensGeneral = I("sensGeneral", sensGeneral); sensAds = I("sensAds", sensAds); sensTouch = I("sensTouch", sensTouch);
             sensHorizontal = I("sensHorizontal", sensHorizontal); sensVertical = I("sensVertical", sensVertical);
+            mouseSmoothing = I("mouseSmoothing", mouseSmoothing); touchSmoothing = I("touchSmoothing", touchSmoothing);
+            touchAcceleration = I("touchAcceleration", touchAcceleration); gyroEnabled = B("gyroEnabled", gyroEnabled); sensGyro = I("sensGyro", sensGyro);
             Sanitize();
         }
 
@@ -139,6 +151,8 @@ namespace Noxy.Core
                 ["damageIndicators"] = damageIndicators, ["autoPickup"] = autoPickup, ["invertY"] = invertY,
                 ["sensGeneral"] = sensGeneral, ["sensAds"] = sensAds, ["sensTouch"] = sensTouch,
                 ["sensHorizontal"] = sensHorizontal, ["sensVertical"] = sensVertical,
+                ["mouseSmoothing"] = mouseSmoothing, ["touchSmoothing"] = touchSmoothing, ["touchAcceleration"] = touchAcceleration,
+                ["gyroEnabled"] = gyroEnabled, ["sensGyro"] = sensGyro,
             };
         }
     }
@@ -254,5 +268,79 @@ namespace Noxy.Core
             float pitch = rawDelta.y * perUnit * (s.sensVertical / 100f) * (s.invertY ? 1f : -1f);
             return new Vector2(yaw, pitch);
         }
+    }
+
+    /// <summary>
+    /// Smooths a stream of look deltas without changing the total rotation: every degree that comes in eventually comes out.
+    /// It is time-based (exponential), so it behaves the same at 30, 60 or 240 FPS.
+    /// </summary>
+    public sealed class LookFilter
+    {
+        public const float MaxTauSeconds = 0.08f;
+        private float pendingX, pendingY;
+
+        public Vector2 Apply(float dx, float dy, float dt, int smoothingPercent)
+        {
+            if (smoothingPercent <= 0)
+            {
+                // smoothing was switched off: release whatever was still pending, then pass input straight through
+                float ox = dx + pendingX, oy = dy + pendingY; pendingX = 0f; pendingY = 0f;
+                return new Vector2(ox, oy);
+            }
+            pendingX += dx; pendingY += dy;
+            float tau = MaxTauSeconds * (smoothingPercent / 100f);
+            float k = dt <= 0f ? 1f : 1f - (float)Math.Exp(-dt / tau);
+            float outX = pendingX * k, outY = pendingY * k;
+            pendingX -= outX; pendingY -= outY;
+            return new Vector2(outX, outY);
+        }
+
+        public void Reset() { pendingX = 0f; pendingY = 0f; }
+    }
+
+    /// <summary>
+    /// The ONE place look input becomes camera rotation: sensitivity, optional smoothing, touch acceleration and gyro are
+    /// applied here exactly once. Controllers pass raw device input and add the result to yaw/pitch; they never scale it again.
+    /// </summary>
+    public sealed class LookPipeline
+    {
+        public const float TouchAccelReferencePixelsPerSecond = 1500f;
+        public const float GyroSignYaw = -1f, GyroSignPitch = 1f;   // UNVERIFIED on a device: flip here if the gyro feels reversed
+
+        private readonly LookFilter mouse = new LookFilter(), touch = new LookFilter();
+
+        /// <summary>Acceleration factor (1 = none) for a touch swipe of the given size in this frame.</summary>
+        public static float TouchGain(float rawX, float rawY, float dt, int accelerationPercent)
+        {
+            if (accelerationPercent <= 0 || dt <= 0f) return 1f;
+            float speed = (float)Math.Sqrt(rawX * rawX + rawY * rawY) / dt;
+            float t = Mathf.Clamp01(speed / TouchAccelReferencePixelsPerSecond);
+            return 1f + (accelerationPercent / 100f) * t;
+        }
+
+        /// <summary>Gyro rotation (radians per second around the device's x and y axes) as yaw/pitch degrees for this frame.</summary>
+        public static Vector2 GyroDelta(float rateX, float rateY, float dt, bool aiming, GameSettings s)
+        {
+            if (!s.gyroEnabled || dt <= 0f) return new Vector2(0f, 0f);
+            float slider = s.sensGyro;
+            if (aiming) slider *= s.sensAds / (float)Mathf.Max(1, s.sensGeneral);
+            float deg = 57.29578f * dt * (slider / 50f);
+            return new Vector2(GyroSignYaw * rateY * deg * (s.sensHorizontal / 100f), GyroSignPitch * rateX * deg * (s.sensVertical / 100f) * (s.invertY ? 1f : -1f));
+        }
+
+        public Vector2 Process(Vector2 rawMouse, Vector2 rawTouch, float gyroRateX, float gyroRateY, bool aiming, float dt, GameSettings s)
+        {
+            var m = SensitivityModel.LookDelta(rawMouse, LookSource.Mouse, aiming, s);
+            m = mouse.Apply(m.x, m.y, dt, s.mouseSmoothing);
+
+            float gain = TouchGain(rawTouch.x, rawTouch.y, dt, s.touchAcceleration);
+            var t = SensitivityModel.LookDelta(new Vector2(rawTouch.x * gain, rawTouch.y * gain), LookSource.Touch, aiming, s);
+            t = touch.Apply(t.x, t.y, dt, s.touchSmoothing);
+
+            var g = GyroDelta(gyroRateX, gyroRateY, dt, aiming, s);
+            return new Vector2(m.x + t.x + g.x, m.y + t.y + g.y);
+        }
+
+        public void Reset() { mouse.Reset(); touch.Reset(); }
     }
 }

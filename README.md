@@ -13,7 +13,7 @@ Original third-person shooter project. This repo currently contains: the **main 
 ## Quick start
 
 1. Install Unity 6 (6000.0+) with the Windows / Android / iOS modules you need. Unity Hub > Add > select this folder. Keep the project outside OneDrive.
-2. On first open, `Noxy > Build Lobby + Training Scenes` runs automatically (or run it from the menu). It creates `Assets/_Project/Scenes/MainLobby.unity` and `Training.unity`, registers them in Build Settings and applies project settings.
+2. On first open, `Noxy > Build Lobby + Training Scenes` runs automatically (or run it from the menu). It creates `Assets/_Project/Scenes/MainLobby.unity`, `Training.unity` and `BattleRoyale.unity`, registers them in Build Settings and applies project settings.
 3. Press **Play** in `MainLobby`. Everything works offline. For online features start the backend (below) and sign in under **Settings > Account**.
 
 If anything fails to compile, send me the Console output.
@@ -24,14 +24,15 @@ If anything fails to compile, send me the Console output.
 |---|---|
 | Lobby: 3D character (idle, drag-rotate, emotes, weapon prop), PLAY, mode select, responsive layouts, safe areas | Implemented (unverified in Unity) |
 | Player ID, rank, level/XP, currencies, notifications, party slots on the lobby | Implemented; the permanent 10-digit ID exists **only after signing in** (offline shows "OFFLINE PROFILE") |
-| Battle Royale, Lone Wolf | **Coming Soon** (no game server). PLAY disabled. |
+| Battle Royale | **Playable only against the dev backend** while a verified server is registered (otherwise Coming Soon, PLAY disabled): queue, 10-20 player cabin, 15 s countdown, plane, jump, freefall, parachute, Bermuda-style island, loot, server-decided combat, map, results. **Never run in Unity or on a device; no dedicated server; HTTP polling, not real-time netcode; no safe zone.** See [docs/BATTLE_ROYALE.md](docs/BATTLE_ROYALE.md) |
+| Lone Wolf | **Coming Soon** (no game server). PLAY disabled. |
 | Training | **Offline prototype**: playable range with local practice targets, no opponents |
 | Vault (outfit, shoes, mask, headgear, backpack, weapon skin, emote): grid, rarity, owned/locked, search/sort/filter, 3D try-on, rotate, confirm/revert | Implemented. Purchasing **not implemented** (locked items are clearly marked, cannot be equipped). Weapon skins show on a placeholder rifle; emotes play placeholder animations. No parachutes. |
 | Profile + Copy ID + rename; other players' public profile (add friend / invite / block / report) | Implemented (online features need the backend) |
 | Friends: search by ID/username, requests, accept/decline/cancel, remove, block | Implemented against the dev backend; offline shows an explanation, never fake data |
 | Party + invitations: invite, accept/decline, ready, leave, rules (friends only, leader only, mode size, full, cooldown, expiry) | Implemented against the dev backend. **Party matchmaking does not exist** (no game server) |
 | Settings: General, Graphics, Audio, Gameplay, Controls, Privacy, Account | Implemented. Music/SFX levels affect supported playback; lobby music asset is not included. Voice chat is not implemented; post-processing toggle has no effect (no stack installed) |
-| Sensitivity (general, ADS, touch, horizontal %, vertical %, invert Y) | Applied to the Training camera through `SensitivityModel` |
+| Sensitivity (general, ADS, touch, horizontal %, vertical %, invert Y, smoothing, touch acceleration, gyro) | Applied to the Training and Battle Royale cameras through one `LookPipeline`. Gyro axis signs unverified on a device |
 | FPS limit + VSync + presets | Applied via `DisplayApplier`/`FramePolicy` (PC: 60/120/144/240/300/Unlimited; mobile: 30/45/60, +90/120 if the display supports it). It is a cap, not a guarantee. VSync overrides the cap on PC (shown in the UI). |
 | HUD editor (drag, size, opacity, preview, defaults, per-orientation, safe-area clamp, sync) | Implemented; edits never trigger gameplay |
 | PC key bindings (conflict detection, restore defaults) and weapon slots 1/2/3 | Implemented (legacy Input Manager) |
@@ -53,7 +54,8 @@ Assets/_Project/
   Scripts/Core/       Noxy.Core   engine-light logic: modes, profile, cosmetics, settings, key bindings, HUD layout,
                                   sensitivity, weapons, radar math/policy, matchmaking, social + account clients, MiniJson
   Scripts/Lobby/      Noxy.Lobby  App (services, networking, display), Stage, Character, UI (+Screens, HUD controls),
-                                  Matchmaking, Training (range, player, radar)
+                                  Matchmaking, Training (range, player, radar), BattleRoyale (island builder, cabin/plane,
+                                  air controller, HUD, match flow)
   Scripts/Editor/     Noxy.Editor scene generator and project setup
   Tests/EditMode/     NUnit tests for Core (run in Unity Test Runner or via tools/core-tests)
 server/               Node dev backend + tests (see server/README.md)
@@ -100,6 +102,9 @@ See `Assets/_Project/Art/Placeholders/README.md` (character prefab, stage, UI ar
 
 ## Economy
 Wallet, missions, Booyah promo reward, diamond store (sandbox) and cosmetic purchases are implemented server-side. Not production-ready, see [docs/ECONOMY_SETUP.md](docs/ECONOMY_SETUP.md).
+
+## Battle Royale and the supplied 3D models
+Flow, local run steps, test plan, verification and gaps: [docs/BATTLE_ROYALE.md](docs/BATTLE_ROYALE.md). The supplied `.glb` models are **quarantined, not imported**: they are labelled CC-BY but look extracted from a commercial game (details and measurements in [docs/ASSET_REPORT.md](docs/ASSET_REPORT.md)); original placeholders are used instead.
 
 ## Supabase accounts and the game backend
 Supabase is the only sign-in: the game backend verifies the Supabase session and uses the Player ID stored in your Supabase profile. **Not verified against a real Supabase project, Google or Apple** (no credentials were available); all tests used a fake or PGlite. Run `tools/supabase-live-check` against your project. Known open gaps (plain-text session storage, no in-game account deletion, gameplay data in the backend's SQLite file rather than Supabase Postgres) are listed in [docs/SUPABASE_AUDIT.md](docs/SUPABASE_AUDIT.md).

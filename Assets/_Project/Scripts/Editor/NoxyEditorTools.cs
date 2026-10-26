@@ -13,6 +13,7 @@ namespace Noxy.EditorTools
         public const string ScenesFolder = "Assets/_Project/Scenes";
         public const string LobbyScenePath = ScenesFolder + "/MainLobby.unity";
         public const string TrainingScenePath = ScenesFolder + "/Training.unity";
+        public const string BattleRoyaleScenePath = ScenesFolder + "/BattleRoyale.unity";
 
         [MenuItem("Noxy/Build Lobby + Training Scenes")]
         public static void BuildAll()
@@ -28,11 +29,27 @@ namespace Noxy.EditorTools
 
             BuildScene(LobbyScenePath, go => go.AddComponent<LobbyBootstrap>(), "LobbyBootstrap");
             BuildScene(TrainingScenePath, go => go.AddComponent<TrainingRange>(), "TrainingRange");
+            BuildScene(BattleRoyaleScenePath, go => go.AddComponent<BattleRoyaleMatch>(), "BattleRoyaleMatch");
             RegisterBuildScenes();
 
             AssetDatabase.SaveAssets();
             EditorSceneManager.OpenScene(LobbyScenePath);
             Debug.Log("[Noxy] Scenes created: " + LobbyScenePath + " and " + TrainingScenePath + ". Press Play to try the lobby.");
+        }
+
+        [MenuItem("Noxy/Build Battle Royale Scene")]
+        public static void BuildBattleRoyale()
+        {
+            if (EditorApplication.isPlayingOrWillEnterPlaymode)
+            {
+                Debug.LogWarning("[Noxy] Stop Play Mode before building scenes.");
+                return;
+            }
+            Directory.CreateDirectory(ScenesFolder);
+            BuildScene(BattleRoyaleScenePath, go => go.AddComponent<BattleRoyaleMatch>(), "BattleRoyaleMatch");
+            RegisterBuildScenes();
+            AssetDatabase.SaveAssets();
+            Debug.Log("[Noxy] Created " + BattleRoyaleScenePath + " and registered it in Build Settings. The scene builds the island at runtime; it needs a signed-in account and a verified online match server (see docs/BATTLE_ROYALE.md).");
         }
 
         [MenuItem("Noxy/Export Placeholder Backgrounds")]
@@ -83,7 +100,8 @@ namespace Noxy.EditorTools
             EditorBuildSettings.scenes = new[]
             {
                 new EditorBuildSettingsScene(LobbyScenePath, true),
-                new EditorBuildSettingsScene(TrainingScenePath, true)
+                new EditorBuildSettingsScene(TrainingScenePath, true),
+                new EditorBuildSettingsScene(BattleRoyaleScenePath, File.Exists(BattleRoyaleScenePath))
             };
         }
     }
@@ -185,7 +203,7 @@ namespace Noxy.EditorTools
             if (EditorApplication.isPlayingOrWillEnterPlaymode || SessionState.GetBool(TriedKey, false)) return;
             SessionState.SetBool(TriedKey, true);
 
-            bool missing = !File.Exists(NoxySceneBuilder.LobbyScenePath) || !File.Exists(NoxySceneBuilder.TrainingScenePath);
+            bool missing = !File.Exists(NoxySceneBuilder.LobbyScenePath) || !File.Exists(NoxySceneBuilder.TrainingScenePath) || !File.Exists(NoxySceneBuilder.BattleRoyaleScenePath);
             if (!missing) return;
 
             try

@@ -154,6 +154,19 @@ namespace Noxy.Lobby
         public static bool KeyHeld(KeyCode key) => Input.GetKey(key);
         public static Vector2 MouseDelta => new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y"));
 
+        public static bool GyroSupported => SystemInfo.supportsGyroscope;
+        /// <summary>Gyroscope rotation rate in radians per second (x = pitch axis, y = yaw axis). Zero when there is no gyroscope.</summary>
+        public static Vector2 GyroRate
+        {
+            get
+            {
+                if (!SystemInfo.supportsGyroscope) return Vector2.zero;
+                if (!Input.gyro.enabled) Input.gyro.enabled = true;
+                var r = Input.gyro.rotationRateUnbiased;
+                return new Vector2(r.x, r.y);
+            }
+        }
+
         private static KeyCode[] capturable;
 
         /// <summary>Returns the first key or mouse button pressed this frame (used when rebinding keys).</summary>
@@ -192,6 +205,8 @@ namespace Noxy.Lobby
         public static bool KeyDown(KeyCode key) => false;
         public static bool KeyHeld(KeyCode key) => false;
         public static Vector2 MouseDelta => Vector2.zero;
+        public static bool GyroSupported => false;
+        public static Vector2 GyroRate => Vector2.zero;
         public static bool TryGetPressedKey(out KeyCode key) { key = KeyCode.None; return false; }
         public static float RotateAxis => 0f;
 #endif

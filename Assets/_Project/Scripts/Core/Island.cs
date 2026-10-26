@@ -447,6 +447,15 @@ namespace Noxy.Core
             {
                 var poi = l.FindPoi(b.PoiId);
                 var rng = new DetRng(l.Seed * 13u + (uint)b.Id.GetHashCode32());
+                if (!b.HasInterior)
+                {
+                    // a solid block has nowhere to stand inside: leave one crate beside its door (local -Z side) instead
+                    double yaw = b.Yaw * Math.PI / 180.0; float c0 = (float)Math.Cos(yaw), s0 = (float)Math.Sin(yaw);
+                    float lz0 = -(b.Depth * 0.5f + 1.6f), lx0 = rng.Range(-b.Width * 0.3f, b.Width * 0.3f);
+                    float cx = b.X + lx0 * c0 + lz0 * s0, cz = b.Z - lx0 * s0 + lz0 * c0;
+                    l.Loot.Add(new LootSpawn { Id = "L" + (++id).ToString("0000"), BuildingId = b.Id, X = cx, Z = cz, Y = l.HeightAt(cx, cz) + 0.2f, Tier = poi.LootTier, Kind = kinds[rng.Int(0, kinds.Length)] });
+                    continue;
+                }
                 for (int f = 0; f < b.Floors; f++)
                 {
                     int count = b.HasInterior ? rng.Int(1, 4) : 1;

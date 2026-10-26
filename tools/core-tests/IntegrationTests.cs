@@ -424,6 +424,33 @@ namespace Noxy.IntegrationTests
         }
 
         [Test]
+        public void SensitivityFeelSettingsPersistAcrossDevicesAndResetWorks()
+        {
+            var a = new TestClient(url); a.Register("it_sens_1");
+            a.Config.Settings.sensGeneral = 91; a.Config.Settings.sensAds = 27; a.Config.Settings.invertY = true;
+            a.Config.Settings.mouseSmoothing = 40; a.Config.Settings.touchSmoothing = 25; a.Config.Settings.touchAcceleration = 60;
+            a.Config.Settings.gyroEnabled = true; a.Config.Settings.sensGyro = 130;
+            a.Config.SaveSettings();
+            Assert.IsTrue(a.Do(d => a.Account.PushSettings(d)).Success);
+
+            // a different device, a fresh local config: the values come from the account, not from the device
+            var b = new TestClient(url);
+            Assert.AreEqual(50, b.Config.Settings.sensGeneral);
+            Assert.IsTrue(b.SignIn("it_sens_1").Success);
+            var s = b.Config.Settings;
+            Assert.AreEqual(91, s.sensGeneral); Assert.AreEqual(27, s.sensAds); Assert.IsTrue(s.invertY);
+            Assert.AreEqual(40, s.mouseSmoothing); Assert.AreEqual(25, s.touchSmoothing); Assert.AreEqual(60, s.touchAcceleration);
+            Assert.IsTrue(s.gyroEnabled); Assert.AreEqual(130, s.sensGyro);
+
+            // reset to defaults on one device is saved to the account and reaches the other
+            b.Config.ResetSettings();
+            Assert.IsTrue(b.Do(d => b.Account.PushSettings(d)).Success);
+            var c = new TestClient(url);
+            Assert.IsTrue(c.SignIn("it_sens_1").Success);
+            Assert.AreEqual(50, c.Config.Settings.sensGeneral); Assert.AreEqual(0, c.Config.Settings.mouseSmoothing);
+            Assert.IsFalse(c.Config.Settings.gyroEnabled); Assert.IsFalse(c.Config.Settings.invertY);
+        }
+        [Test]
         public void PrivacySettingBlocksInvitesServerSide()
         {
             var a = new TestClient(url); a.Register("it_priv_a");

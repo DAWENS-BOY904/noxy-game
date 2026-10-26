@@ -302,7 +302,23 @@ namespace Noxy.Lobby
             SliderRow("Touch camera", SensitivityModel.MinSlider, SensitivityModel.MaxSlider, S.sensTouch, true, n, v => S.sensTouch = Mathf.RoundToInt(v));
             SliderRow("Horizontal", 20, 200, S.sensHorizontal, true, v => Mathf.RoundToInt(v) + "%", v => S.sensHorizontal = Mathf.RoundToInt(v));
             SliderRow("Vertical", 20, 200, S.sensVertical, true, v => Mathf.RoundToInt(v) + "%", v => S.sensVertical = Mathf.RoundToInt(v));
-            Note("These sliders drive the camera in the Training range. Scope-specific, gyroscope and controller sensitivity aren't offered because those features don't exist yet.");
+            Note("These sliders drive the camera in the Training range and in Battle Royale. Changes apply immediately and are saved to your account. Controller sensitivity isn't offered because controller support doesn't exist yet.");
+
+            UIWidgets.SectionTitle(content, "Look feel");
+            Func<float, string> pct = v => Mathf.RoundToInt(v) + "%";
+            if (!DisplayApplier.IsMobile) SliderRow("Mouse smoothing", 0, 100, S.mouseSmoothing, true, pct, v => S.mouseSmoothing = Mathf.RoundToInt(v));
+            if (DisplayApplier.IsMobile)
+            {
+                SliderRow("Touch smoothing", 0, 100, S.touchSmoothing, true, pct, v => S.touchSmoothing = Mathf.RoundToInt(v));
+                SliderRow("Touch aim acceleration", 0, 100, S.touchAcceleration, true, pct, v => S.touchAcceleration = Mathf.RoundToInt(v));
+                if (InputCompat.GyroSupported)
+                {
+                    ToggleRow("Gyroscope aiming", () => S.gyroEnabled, v => S.gyroEnabled = v);
+                    SliderRow("Gyroscope sensitivity", SensitivityModel.MinSlider, SensitivityModel.MaxSlider, S.sensGyro, true, n, v => S.sensGyro = Mathf.RoundToInt(v));
+                }
+                else Note("This device has no gyroscope, so gyro aiming is not offered.");
+            }
+            Note("Smoothing and acceleration are time-based, so they feel the same at any frame rate. Gyro direction has not been verified on a physical device yet.");
 
             UIWidgets.SectionTitle(content, "On-screen controls");
             ActionButton("EDIT HUD LAYOUT", UITheme.Accent, () => Ctx.Screens.Open(LobbyScreenId.HudEditor));

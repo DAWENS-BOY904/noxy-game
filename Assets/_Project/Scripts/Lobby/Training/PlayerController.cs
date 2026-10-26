@@ -104,6 +104,16 @@ namespace Noxy.Lobby
         private float yaw, pitch, verticalVelocity, currentFov = 60f, cameraDistance = 3.2f;
         private bool crouching, moving;
         private readonly RecoilModel recoil = new RecoilModel();
+        private readonly LookPipeline lookPipeline = new LookPipeline();
+
+        /// <summary>
+        /// Online matches set this: a shot is then only REPORTED (origin, direction, weapon) and the server decides hits and damage.
+        /// Offline (Training) leaves it null and resolves hits locally against the practice targets.
+        /// </summary>
+        public Action<Vector3, Vector3, WeaponDefinition> RemoteShot;
+        /// <summary>Online matches: raised after a local switch / reload request passes, so it can be sent to the server.</summary>
+        public Action<WeaponSlot> RemoteSwitch;
+        public Action RemoteReload;
 
         public WeaponInventory Weapons { get; } = new WeaponInventory();
         public HudControlsView Touch;
@@ -120,6 +130,36 @@ namespace Noxy.Lobby
         public event Action<string> Message;
 
         public float Yaw => yaw;
+        public float Pitch => pitch;
+        /// <summary>Removes the practice loadout; an online match then mirrors the server's inventory instead.</summary>
+        public void ClearLocalLoadout()
+        {
+            Weapons.SetAuthoritative(WeaponSlot.Primary, null, 0, 0);
+            Weapons.SetAuthoritative(WeaponSlot.Secondary, null, 0, 0);
+            Weapons.SetAuthoritative(WeaponSlot.Melee, null, 0, 0);
+        }
+        public bool IsCrouching => crouching;
+
+        /// <summary>
+        /// Hands the character to another controller (aircraft cabin, freefall, parachute). While external, this component
+        /// neither moves the body nor drives the camera.
+        /// </summary>
+        public void SetExternallyControlled(bool external)
+        {
+            enabled = !external;
+            if (body != null) body.enabled = !external;
+        }
+
+        /// <summary>Moves the character to a position the server decided (spawn, landing, correction after a rejected move).</summary>
+        public void Snap(Vector3 position, float yawDegrees)
+        {
+            if (body == null) { transform.position = position; return; }
+            body.enabled = false;
+            transform.position = position;
+            body.enabled = true;
+            yaw = yawDegrees;
+            verticalVelocity = 0f;
+        }
 
         public void Setup(Camera camera, ICharacterView characterView)
         {
@@ -188,9 +228,9 @@ namespace Noxy.Lobby
             Aiming = InputCompat.KeyHeld(keys.Get(GameAction.Aim)) || (touch != null && touch.Aim);
 
             // Look: sensitivity is applied here, so the Settings sliders change real camera behavior.
-            Vector2 look = Vector2.zero;
-            if (UseMouseLook) look += SensitivityModel.LookDelta(InputCompat.MouseDelta, LookSource.Mouse, Aiming, s);
-            if (touch != null) look += SensitivityModel.LookDelta(touch.ConsumeLook(), LookSource.Touch, Aiming, s);
+            // LookPipeline is the only place sensitivity, smoothing, touch acceleration and gyro are applied.
+            Vector2 gyro = s.gyroEnabled ? InputCompat.GyroRate : Vector2.zero;
+            Vector2 look = lookPipeline.Process(UseMouseLook ? InputCompat.MouseDelta : Vector2.zero, touch != null ? touch.ConsumeLook() : Vector2.zero, gyro.x, gyro.y, Aiming, dt, s);
             yaw += look.x;
             pitch = Mathf.Clamp(pitch + look.y, -45f, 70f);
 
@@ -244,6 +284,7 @@ namespace Noxy.Lobby
             {
                 switch (Weapons.TryReload())
                 {
+                    case ReloadResult.Started: RemoteReload?.Invoke(); break;
                     case ReloadResult.NoReserve: Message?.Invoke("No reserve ammo"); break;
                     case ReloadResult.Full: Message?.Invoke("Magazine full"); break;
                 }
@@ -280,7 +321,7 @@ namespace Noxy.Lobby
         {
             switch (Weapons.TrySwitch(slot))
             {
-                case SwitchResult.Switched: view.SetHeldWeapon((int)slot); break;
+                case SwitchResult.Switched: view.SetHeldWeapon((int)slot); RemoteSwitch?.Invoke(slot); break;
                 case SwitchResult.SlotEmpty: Message?.Invoke("Nothing equipped in that slot"); break;
             }
         }
@@ -303,11 +344,12 @@ namespace Noxy.Lobby
                 pitch = Mathf.Clamp(pitch - recoil.OnShot(Aiming), -45f, 70f);
             }
 
+            RemoteShot?.Invoke(origin, dir, weapon);
             Vector3 end = origin + dir * range;
             if (Physics.Raycast(origin, dir, out var hit, range, ~0, QueryTriggerInteraction.Ignore))
             {
                 end = hit.point;
-                var dummy = hit.collider.GetComponentInParent<TargetDummy>();
+                var dummy = RemoteShot == null ? hit.collider.GetComponentInParent<TargetDummy>() : null;   // online: no local damage
                 if (dummy != null)
                 {
                     Hits++;

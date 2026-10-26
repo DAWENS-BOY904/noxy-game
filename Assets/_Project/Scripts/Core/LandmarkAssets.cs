@@ -86,6 +86,24 @@ namespace Noxy.Core
                 Problems = "None technical.",
                 IpConcern = "",
             },
+            new LandmarkAsset
+            {
+                Id = "tpose_character", Role = "Not used: static character mesh found in the project",
+                RequestedPath = "", ActualPath = Dir + "new-user-format.glb",
+                Author = "BOSS SHIVRAJ", License = "CC-BY-4.0", SourceUrl = "https://sketchfab.com/3d-models/freefire-new-tpose-adam-model-by-boss-shivraj-5a4f86bd89414348a17ea1d8b7864674",
+                RawSizeMeters = new[] { 7.3f, 8.0f, 1.7f }, MeasuredSizeMeters = new[] { 7.3f, 8.0f, 1.7f }, Triangles = 5454,
+                Problems = "A static T-pose mesh with no skeleton or animation, 8 m tall, so it cannot replace the game's rigged character.",
+                IpConcern = "Titled as a Free Fire character ('freefire-new-tpose-adam-model'): a recognisable character from a commercial game. Do not ship it.",
+            },
+            new LandmarkAsset
+            {
+                Id = "shop_prop", Role = "Not used: small prop found in the project",
+                RequestedPath = "", ActualPath = Dir + "shop__freefire.glb",
+                Author = "sxnneh", License = "CC-BY-4.0", SourceUrl = "https://sketchfab.com/3d-models/shop-freefire-7ecf28b4854649289ab115a851608316",
+                RawSizeMeters = new[] { 2.2f, 3.0f, 1.7f }, MeasuredSizeMeters = new[] { 2.2f, 3.0f, 1.7f }, Triangles = 146,
+                Problems = "None technical (146 triangles, one 512 px texture).",
+                IpConcern = "Titled 'freefire'.",
+            },
         };
 
         public static LandmarkAsset Find(string id)
