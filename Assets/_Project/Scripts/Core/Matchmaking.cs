@@ -20,7 +20,8 @@ namespace Noxy.Core
         ServerUnavailable,
         Timeout,
         SceneLoadFailed,
-        Simulated
+        Simulated,
+        NotEnoughPlayers
     }
 
     public sealed class MatchmakingRequest

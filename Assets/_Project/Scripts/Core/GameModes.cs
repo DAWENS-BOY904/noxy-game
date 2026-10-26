@@ -56,11 +56,11 @@ namespace Noxy.Core
                     Id = GameModeIds.BattleRoyale,
                     DisplayName = "Battle Royale",
                     Tagline = "Last squad standing",
-                    MaxPlayers = 50,
+                    MaxPlayers = 20,
                     MaxPartySize = 4,
                     RequiresDedicatedServer = true,
                     Availability = ModeAvailability.ComingSoon,
-                    StatusNote = "Coming Soon - needs the dedicated game server, which is not built yet."
+                    StatusNote = "Not available: no game server is online yet. This mode becomes playable only when a verified server reports in."
                 },
                 new GameModeDefinition
                 {

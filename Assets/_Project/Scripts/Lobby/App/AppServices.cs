@@ -32,6 +32,9 @@ namespace Noxy.Lobby
 
         /// <summary>Clans, clan wars, companions, map events and fair play. Server-authoritative; unavailable while offline.</summary>
         public static ICommunityService Community { get; private set; } = new OfflineCommunityService();
+        /// <summary>Battle Royale match authority client. Server-authoritative; unavailable while offline.</summary>
+        public static IBattleRoyaleService BattleRoyale { get; private set; } = new OfflineBattleRoyaleService();
+        public static BattleRoyaleAvailability BrAvailability { get; private set; }
 
         public static bool IsInitialized => Profile != null;
 
@@ -40,6 +43,7 @@ namespace Noxy.Lobby
         {
             Catalog = null; Profile = null; Config = null; Modes = null; Matchmaking = null;
             OfflineMatchmaking = null; Notifications = null; Account = null; Social = null; Auth = null; Economy = new OfflineEconomyService(); Community = new OfflineCommunityService();
+            BattleRoyale = new OfflineBattleRoyaleService(); BrAvailability = null;
             OfflineMode = false; NativeSignIn = null;
         }
 
@@ -72,6 +76,9 @@ namespace Noxy.Lobby
             communityService.BalanceChanged = () => economy.RefreshWallet();
             Account.Community = communityService;
             Community = communityService;
+            var brService = new RemoteBattleRoyaleService(api);
+            Account.BattleRoyale = brService;
+            BattleRoyale = brService;
 
             var supabase = SupabaseConfigLoader.Load();
             Auth = new AuthService(new SupabaseAuthClient(new UnityWebRequestTransport(), supabase), new PrefsSessionStore(), supabase);
@@ -97,8 +104,15 @@ namespace Noxy.Lobby
             Matchmaking = new MatchmakingController(new IMatchmakingService[]
             {
                 OfflineMatchmaking,
+                new BattleRoyaleMatchmakingService(brService),
                 new UnavailableMatchmakingService()
-            });
+            })
+            {
+                // the server may hold a lobby open for its fill timeout before it starts a match
+                SearchTimeoutSeconds = 240f
+            };
+            var brMode = Modes.Find(GameModeIds.BattleRoyale);
+            if (brMode != null) BrAvailability = new BattleRoyaleAvailability(Community, brMode, () => Application.CanStreamedLevelBeLoaded(BattleRoyaleMatchmakingService.SceneName));
 
             AppRunner.Ensure();
             Notifications.Post("Welcome to Noxy", "Offline profile loaded. Sign in under Settings > Account for online features.", NotificationSeverity.Info, false);

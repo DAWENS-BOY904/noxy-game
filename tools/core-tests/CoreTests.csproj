@@ -25,5 +25,7 @@
     <Compile Include="UnityShim.cs" />
     <Compile Include="IntegrationTests.cs" />
     <Compile Include="SupabaseBridgeTests.cs" />
+    <Compile Include="MapExportTests.cs" />
+    <Compile Include="BattleRoyaleIntegrationTests.cs" />
   </ItemGroup>
 </Project>

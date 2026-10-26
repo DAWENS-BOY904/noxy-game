@@ -108,6 +108,8 @@ namespace Noxy.Core
         // Setting a service also tells it why it is unavailable, so every screen explains the real reason.
         public RemoteEconomyService Economy { get => economyService; set { economyService = value; if (value != null) value.UnavailableDetail = () => UnavailableReason; } }
         public RemoteCommunityService Community { get => communityService; set { communityService = value; if (value != null) value.UnavailableDetail = () => UnavailableReason; } }
+        private RemoteBattleRoyaleService battleRoyaleService;
+        public RemoteBattleRoyaleService BattleRoyale { get => battleRoyaleService; set { battleRoyaleService = value; if (value != null) value.UnavailableDetail = () => UnavailableReason; } }
 
         public string ServerUrl
         {
@@ -266,6 +268,7 @@ namespace Noxy.Core
                 social.SignedIn = true;
                 if (Economy != null) { Economy.SignedIn = true; Economy.RefreshWallet(); }
                 if (Community != null) Community.SignedIn = true;
+                if (BattleRoyale != null) BattleRoyale.SignedIn = true;
                 lastNotificationId = 0;
                 firstNotificationPull = true;
                 heartbeatTimer = 0f;
@@ -330,6 +333,7 @@ namespace Noxy.Core
             social.Clear();
             if (Economy != null) { Economy.SignedIn = false; Economy.Clear(); }
             if (Community != null) Community.SignedIn = false;
+            if (BattleRoyale != null) BattleRoyale.SignedIn = false;
             profile.RevertToLocal();
             PublicId = "";
             Username = "";

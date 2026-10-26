@@ -160,7 +160,14 @@ function create(ctx) {
     });
   }
 
-  return { install, effectiveStatus, view };
+  /** Best verified-online server for a mode (least loaded, optional region), or null. Never returns a stale or unproven server. */
+  function pick(mode, region) {
+    const rows = q.all('SELECT * FROM game_servers').filter(r => r.mode === mode && effectiveStatus(r) === 'online' && r.players < r.capacity && (!region || r.region === region));
+    rows.sort((a, b) => a.players / a.capacity - b.players / b.capacity || a.id.localeCompare(b.id));
+    return rows.length ? view(rows[0]) : null;
+  }
+
+  return { install, effectiveStatus, view, pick };
 }
 
 module.exports = { create, tcpProbe };

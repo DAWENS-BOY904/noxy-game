@@ -20,7 +20,7 @@ const DEFAULT_CONFIG = {
   maxPendingSentInvites: 5,
   presenceTimeoutMs: 30 * 1000,
   usernameChangeCooldownMs: 24 * 3600 * 1000,
-  limits: { auth: [20, 60000], search: [20, 60000], invite: [30, 60000], friendRequest: [20, 60000], report: [5, 60000], purchase: [20, 60000], claim: [30, 60000], internal: [600, 60000], clan: [30, 60000], clanChat: [20, 10000], appeal: [3, 3600000], admin: [120, 60000] },
+  limits: { auth: [20, 60000], search: [20, 60000], invite: [30, 60000], friendRequest: [20, 60000], report: [5, 60000], purchase: [20, 60000], claim: [30, 60000], internal: [600, 60000], clan: [30, 60000], brState: [30, 1000], brMove: [30, 1000], brAction: [40, 1000], clanChat: [20, 10000], appeal: [3, 3600000], admin: [120, 60000] },
   // Secrets come from the environment (see index.js); empty means the feature is disabled.
   economy: { matchServerKey: '', testPayments: false, verifiers: {}, webhookSecrets: {}, adsSecret: '' },
   idGenerator: () => String(crypto.randomInt(1_000_000_000, 10_000_000_000)),
@@ -372,6 +372,7 @@ function createApp(options = {}) {
   const companions = require('./companions').create(modctx);
   const mapevents = require('./mapevents').create(modctx);
   const servers = require('./servers').create(modctx);
+  const br = require('./br').create({ ...modctx, servers });
 
   // ---------- routes ----------
   const routes = [];
@@ -466,6 +467,7 @@ function createApp(options = {}) {
   companions.install(route);
   mapevents.install(route);
   servers.install(route);
+  br.install(route);
 
   route('GET', '/api/me/settings', ({ me }) => {
     const s = settingsRow(me.id);
@@ -818,7 +820,7 @@ function createApp(options = {}) {
     }
   }
 
-  return { handle, db, config, authMode, supabase: sb, economy, fairplay, clans, clanwars, companions, mapevents, servers, close: () => db.close() };
+  return { handle, db, config, authMode, supabase: sb, economy, fairplay, clans, clanwars, companions, mapevents, servers, br, close: () => db.close() };
 }
 
 module.exports = { createApp, catalog };

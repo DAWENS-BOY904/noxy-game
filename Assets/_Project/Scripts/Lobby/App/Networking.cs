@@ -32,6 +32,7 @@ namespace Noxy.Lobby
         private void Update()
         {
             if (AppServices.Account != null) AppServices.Account.Tick(Time.unscaledDeltaTime);
+            if (AppServices.BrAvailability != null) AppServices.BrAvailability.Tick(Time.unscaledDeltaTime);
             if (AppServices.Auth != null)
             {
                 OAuthLauncher.Pump(AppServices.Auth);

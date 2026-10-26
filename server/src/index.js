@@ -30,6 +30,12 @@ if (env.SUPABASE_SERVICE_ROLE_KEY) console.warn('SUPABASE_SERVICE_ROLE_KEY is se
 const { tcpProbe } = require('./servers');
 config.servers = { ttlMs: Number(env.NOXY_SERVER_TTL_SECONDS || 30) * 1000, probe: env.NOXY_SERVER_PROBE === 'tcp' ? tcpProbe() : null };
 
+// Battle Royale tuning (JSON merged into the match rules). For development and automated tests only, e.g. short phases.
+if (env.NOXY_BR_CONFIG) {
+  try { config.br = JSON.parse(env.NOXY_BR_CONFIG); console.warn('NOXY_BR_CONFIG is set: Battle Royale rules are overridden (development only).'); }
+  catch { console.error('NOXY_BR_CONFIG is not valid JSON; ignoring it.'); }
+}
+
 const app = createApp({ dbPath, config });
 const server = http.createServer((req, res) => { app.handle(req, res); });
 server.listen(port, host, () => console.log(`Noxy dev backend listening on http://${host}:${port} (db: ${dbPath}, auth: ${app.authMode})`));
