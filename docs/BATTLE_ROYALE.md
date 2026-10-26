@@ -17,7 +17,7 @@ listed in [Verification](#verification). There is no dedicated game server; the 
 ### Match flow (what the client does)
 
 1. Lobby: choose **Battle Royale**, press **PLAY**. The backend rejects the request (503 `no_server_available`) unless a verified online server is registered. It never invents players. If fewer than the minimum join before the deadline the match is **cancelled** and the player is told.
-2. `BattleRoyale` scene loads. Loading screen stages (real progress, no timers): Connecting server, Finding players, Loading the Bermuda map, Preparing characters, Starting match. It shows percent, a "slow connection" note after 8 s, per-stage time-outs, **Cancel**, and error messages with **Try again / Lobby**.
+2. `BattleRoyale` scene loads. The first stage connects to the match backend, then validates the returned match assignment. Loading progress only advances when the corresponding request or map/player operation succeeds. A pending initial request starts the stage timeout immediately; the screen may truthfully remain at 0% while waiting, displays a slow-connection message after 8 s, and fails with a retryable error instead of waiting forever. **Try again** reloads the scene; **Lobby** cancels the local attempt and best-effort leaves the queue.
 3. The island is generated from the server's seed and its hash is compared with the server's (`/api/br/map-info`). A mismatch stops the match with a clear message instead of letting the client and server disagree.
 4. Cabin phase (15 s): first-person walk inside a placeholder cabin with side windows; the plane flies the server's route from the server's clock. Other players appear at their server slots.
 5. Flight: **JUMP** (button or the Jump key) appears at +5 s. Forced exit at the end of the route.
@@ -74,6 +74,7 @@ Verified by automated tests:
 ## Known gaps and limits
 
 - **No dedicated server and no real-time netcode.** State goes over HTTP polling (about 4-5 Hz); movement of other players is smoothed, not predicted. Fast fights will feel laggy. A real game server needs the same rules (`br.js` is written to be transport-independent) and a UDP/WebSocket transport.
+- A healthy `/api/health` response does not prove that a Battle Royale server is online. The backend requires a verified server registration before it accepts a Battle Royale queue request, and clients must sign in to use online matchmaking.
 - Matches live in memory: a backend restart ends them.
 - No safe zone / shrinking circle, no vehicles, no swimming (water landings are relocated; walking into water is not handled), no spectating, no squads/teams in the match.
 - Building walls and doors are **not** enforced by the server's hit test (terrain only) and there is no lag compensation.

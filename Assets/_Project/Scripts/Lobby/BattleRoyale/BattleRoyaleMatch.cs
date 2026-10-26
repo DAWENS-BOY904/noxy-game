@@ -51,6 +51,7 @@ namespace Noxy.Lobby
         private readonly HashSet<string> pickedLoot = new HashSet<string>();
 
         private bool ready, finished, failedShown, paused, cabinStarted, pollInFlight, moveInFlight, forceMirror, resyncWanted;
+        private bool retrying, navigatingAway;
         private float pollTimer, groundTimer, lastFireAt, lastSwitchAt, landedAt = -100f, networkTrouble;
         private Vector3 lastGroundPos;
         private LootSpawn nearbyLoot;
@@ -96,7 +97,7 @@ namespace Noxy.Lobby
             responsive.LayoutChanged += OnLayoutChanged;
             hud = BrHud.Create(safeRoot);
             hud.CancelLoading += OnCancelLoading;
-            hud.RetryClicked += () => SceneManager.LoadScene(gameObject.scene.name);
+            hud.RetryClicked += RetryLoading;
             hud.ReturnToLobby += LeaveToLobby;
             hud.JumpClicked += () => air?.TryJump();
             hud.DeployClicked += () => air?.TryDeploy();
@@ -338,13 +339,29 @@ namespace Noxy.Lobby
 
         private void OnCancelLoading()
         {
-            loading.Cancel();
-            svc.LeaveQueue(_ => { });   // only succeeds while the match is still waiting for players
             LeaveToLobby();
+        }
+
+        private void RetryLoading()
+        {
+            if (retrying || navigatingAway || ready) return;
+            retrying = true;
+            if (SceneManager.LoadSceneAsync(gameObject.scene.name) == null)
+            {
+                retrying = false;
+                hud.ShowLoadingFailure("Unity could not restart the Battle Royale scene. Return to the lobby and try again.");
+            }
         }
 
         private void LeaveToLobby()
         {
+            if (navigatingAway) return;
+            navigatingAway = true;
+            if (!ready)
+            {
+                loading.Cancel();
+                svc?.LeaveQueue(_ => { });
+            }
             Time.timeScale = 1f;
             SceneManager.LoadScene(LobbySceneName);
         }

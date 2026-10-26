@@ -331,7 +331,7 @@ namespace Noxy.Core
         {
             switch (s)
             {
-                case LoadStage.ConnectingServer: return "Connecting to server";
+                case LoadStage.ConnectingServer: return "Connecting to match backend";
                 case LoadStage.FindingPlayers: return "Finding players";
                 case LoadStage.LoadingMap: return "Loading the Bermuda map";
                 case LoadStage.PreparingCharacters: return "Preparing characters";
@@ -446,6 +446,8 @@ namespace Noxy.Core
         private int networkFailures;
         private int attemptId;
         private float attemptStartedAt;
+        private string lastLoggedPhase = "";
+        private int lastLoggedPlayers = -1;
         private GameModeDefinition mode;
 
         public BattleRoyaleMatchmakingService(IBattleRoyaleService service) { svc = service; }
@@ -461,6 +463,8 @@ namespace Noxy.Core
             int attempt = ++attemptId;
             mode = m; active = true; inFlight = true; networkFailures = 0; poll = 0f;
             attemptStartedAt = Time.realtimeSinceStartup;
+            lastLoggedPhase = "";
+            lastLoggedPlayers = -1;
             if (!svc.IsAvailable) { active = false; inFlight = false; Emit(MatchmakingState.Failed, svc.UnavailableReason, 0f, MatchmakingError.ServerUnavailable); return; }
             Emit(MatchmakingState.Searching, LoadingProgress.StageMessage(LoadStage.ConnectingServer), 0.05f);
             svc.Queue(m.Id, r =>
@@ -536,8 +540,22 @@ namespace Noxy.Core
                 Emit(MatchmakingState.Failed, "The matchmaking service returned an empty match assignment. Please retry.", 0f, MatchmakingError.ServerUnavailable);
                 return;
             }
-            Debug.Log($"[Noxy BR] state=matchmaking_assignment elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s phase={s.status} players={(s.waiting != null ? s.waiting.players : 0)}/{(s.waiting != null ? s.waiting.minPlayers : 0)} assignment={(string.IsNullOrEmpty(s.server?.host) ? "missing" : "received")}");
-            switch (BattleRoyaleSession.ParsePhase(s.status))
+            var phase = BattleRoyaleSession.ParsePhase(s.status);
+            int players = s.waiting != null ? s.waiting.players : 0;
+            if (s.status != lastLoggedPhase || players != lastLoggedPlayers)
+            {
+                Debug.Log($"[Noxy BR] state=matchmaking_assignment elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s phase={s.status} players={players}/{(s.waiting != null ? s.waiting.minPlayers : 0)} assignment={(string.IsNullOrEmpty(s.server?.host) ? "missing" : "received")}");
+                lastLoggedPhase = s.status;
+                lastLoggedPlayers = players;
+            }
+            if ((phase == BrPhase.Waiting || phase == BrPhase.Cabin || phase == BrPhase.Flight || phase == BrPhase.Combat) &&
+                (s.server == null || string.IsNullOrEmpty(s.server.host) || s.server.port < 1 || s.server.port > 65535))
+            {
+                active = false;
+                Emit(MatchmakingState.Failed, "The server returned a match without a valid server assignment. Please return to the lobby and retry.", 0f, MatchmakingError.ServerUnavailable);
+                return;
+            }
+            switch (phase)
             {
                 case BrPhase.Waiting:
                     if (s.waiting == null)
@@ -557,12 +575,6 @@ namespace Noxy.Core
                 case BrPhase.Cabin:
                 case BrPhase.Flight:
                 case BrPhase.Combat:
-                    if (s.server == null || string.IsNullOrEmpty(s.server.host) || s.server.port < 1 || s.server.port > 65535)
-                    {
-                        active = false;
-                        Emit(MatchmakingState.Failed, "The server started a match without a valid server assignment. Please return to the lobby and retry.", 0f, MatchmakingError.ServerUnavailable);
-                        return;
-                    }
                     active = false;
                     Emit(MatchmakingState.Succeeded, "Match found", 1f, MatchmakingError.None,
                         new MatchAssignment { ModeId = GameModeIds.BattleRoyale, SceneName = SceneName, ServerAddress = s.server.host, ServerPort = s.server.port, SessionToken = "" });
