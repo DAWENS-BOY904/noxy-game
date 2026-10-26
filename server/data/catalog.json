@@ -1,0 +1,53 @@
+{
+  "startingOwned": [
+    "outfit_recruit", "outfit_urban", "outfit_nightops",
+    "shoes_basic", "shoes_runner",
+    "mask_bandana", "mask_visor",
+    "cap_standard", "helmet_ops",
+    "pack_scout",
+    "wskin_default", "wskin_arctic",
+    "emote_wave", "emote_flex"
+  ],
+  "startingLoadout": {
+    "outfit": "outfit_urban",
+    "shoes": "shoes_basic",
+    "headgear": "cap_standard",
+    "weaponskin": "wskin_default",
+    "emote": "emote_wave"
+  },
+  "items": [
+    { "id": "outfit_recruit", "slot": "outfit", "name": "Recruit Fatigues", "rarity": "common", "price": 0 },
+    { "id": "outfit_urban", "slot": "outfit", "name": "Urban Runner", "rarity": "common", "price": 0 },
+    { "id": "outfit_nightops", "slot": "outfit", "name": "Night Ops", "rarity": "rare", "price": 0 },
+    { "id": "outfit_desert", "slot": "outfit", "name": "Dune Scout", "rarity": "rare", "price": 800 },
+    { "id": "outfit_crimson", "slot": "outfit", "name": "Crimson Guard", "rarity": "epic", "price": 2200 },
+    { "id": "outfit_aurora", "slot": "outfit", "name": "Aurora Suit", "rarity": "legendary", "price": 5000 },
+    { "id": "shoes_basic", "slot": "shoes", "name": "Field Boots", "rarity": "common", "price": 0 },
+    { "id": "shoes_runner", "slot": "shoes", "name": "Sprint Runners", "rarity": "common", "price": 0 },
+    { "id": "shoes_tactical", "slot": "shoes", "name": "Tactical Treads", "rarity": "rare", "price": 700 },
+    { "id": "shoes_neon", "slot": "shoes", "name": "Neon Soles", "rarity": "epic", "price": 1800 },
+    { "id": "mask_bandana", "slot": "mask", "name": "Dust Bandana", "rarity": "common", "price": 0 },
+    { "id": "mask_visor", "slot": "mask", "name": "Scout Visor", "rarity": "rare", "price": 0 },
+    { "id": "mask_gas", "slot": "mask", "name": "Filter Mask", "rarity": "rare", "price": 900 },
+    { "id": "mask_skull", "slot": "mask", "name": "Bone Mask", "rarity": "epic", "price": 2000 },
+    { "id": "cap_standard", "slot": "headgear", "name": "Field Cap", "rarity": "common", "price": 0 },
+    { "id": "helmet_ops", "slot": "headgear", "name": "Ops Helmet", "rarity": "rare", "price": 0 },
+    { "id": "beanie_ash", "slot": "headgear", "name": "Ash Beanie", "rarity": "common", "price": 400 },
+    { "id": "helmet_gold", "slot": "headgear", "name": "Gilded Helm", "rarity": "legendary", "price": 4800 },
+    { "id": "pack_scout", "slot": "backpack", "name": "Scout Pack", "rarity": "common", "price": 0 },
+    { "id": "pack_tactical", "slot": "backpack", "name": "Tactical Rig", "rarity": "rare", "price": 1100 },
+    { "id": "wskin_default", "slot": "weaponskin", "name": "Standard Issue", "rarity": "common", "price": 0 },
+    { "id": "wskin_arctic", "slot": "weaponskin", "name": "Arctic Wrap", "rarity": "common", "price": 0 },
+    { "id": "wskin_ember", "slot": "weaponskin", "name": "Ember Camo", "rarity": "rare", "price": 1200 },
+    { "id": "wskin_gold", "slot": "weaponskin", "name": "Gilded Barrel", "rarity": "legendary", "price": 6000 },
+    { "id": "emote_wave", "slot": "emote", "name": "Wave", "rarity": "common", "price": 0 },
+    { "id": "emote_flex", "slot": "emote", "name": "Flex", "rarity": "common", "price": 0 },
+    { "id": "emote_dance", "slot": "emote", "name": "Shuffle", "rarity": "rare", "price": 900 },
+    { "id": "emote_salute", "slot": "emote", "name": "Salute", "rarity": "epic", "price": 1500 }
+  ],
+  "modes": {
+    "battle_royale": { "maxPartySize": 4 },
+    "lone_wolf": { "maxPartySize": 1 },
+    "training": { "maxPartySize": 1 }
+  }
+}

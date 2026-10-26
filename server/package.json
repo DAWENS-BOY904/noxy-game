@@ -1,0 +1,13 @@
+{
+  "name": "noxy-dev-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development backend for the Noxy lobby: accounts, 10-digit player IDs, friends, party invites, inventory validation, settings sync. SQLite via node:sqlite. NOT production hardened.",
+  "type": "commonjs",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test --no-warnings test/*.test.js"
+  }
+}
+

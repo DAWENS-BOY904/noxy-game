@@ -1,0 +1,17 @@
+{
+  "name": "Noxy.Lobby",
+  "rootNamespace": "Noxy.Lobby",
+  "references": [
+    "Noxy.Core",
+    "UnityEngine.UI"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
