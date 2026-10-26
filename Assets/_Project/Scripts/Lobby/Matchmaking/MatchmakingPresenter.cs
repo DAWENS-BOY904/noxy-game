@@ -40,6 +40,15 @@ namespace Noxy.Lobby
         {
             var mode = AppServices.Modes.Selected;
             loadingScene = false;
+
+            var snap = AppServices.Social.Snapshot;
+            if (AppServices.Social.IsAvailable && snap.InParty && snap.Party.members.Count > mode.MaxPartySize)
+            {
+                AppServices.Notifications.Post("Can't start match",
+                    mode.DisplayName + " is a solo mode. Leave your party first.", NotificationSeverity.Warning);
+                return;
+            }
+
             if (!AppServices.Matchmaking.TryStart(mode, AppServices.Profile.Profile.playerId, out string reason))
                 AppServices.Notifications.Post("Can't start match", reason, NotificationSeverity.Warning);
         }

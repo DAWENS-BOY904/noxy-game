@@ -1,104 +1,521 @@
 using System;
+using System.Collections.Generic;
 using Noxy.Core;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace Noxy.Lobby
 {
-    /// <summary>Device preferences. Volume, quality and lobby options are real; the debug switch exercises the PLAY error UI.</summary>
+    /// <summary>
+    /// Tabbed settings. Everything applies immediately and is saved locally; when signed in the privacy and
+    /// gameplay preferences are mirrored to the backend a moment after the last change.
+    /// </summary>
     public sealed class SettingsScreen : LobbyScreen
     {
+        private const float SyncDelaySeconds = 1.5f;
+        private static readonly string[] TabLabels = { "GENERAL", "GRAPHICS", "AUDIO", "GAMEPLAY", "CONTROLS", "PRIVACY", "ACCOUNT" };
+
+        private TabBar tabs;
         private RectTransform content;
+        private int tab;
+        private float syncTimer = -1f;
+        private bool visible;
+
+        // Controls tab state
+        private KeyBindings bindingsDraft;
+        private GameAction? capturing;
+        private float captureStartedAt;
+        private Text bindingMessage;
+
+        // Account tab state
+        private InputField urlInput, userInput, passInput;
+        private Text accountMessage;
+        private string pendingMessage = "";
+
+        private GameSettings S => AppServices.Config.Settings;
 
         public override LobbyScreenId Id => LobbyScreenId.Settings;
         public override string Title => "Settings";
 
         protected override void BuildContent(RectTransform parent)
         {
+            tabs = TabBar.Create(parent, TabLabels, SelectTab, 18);
+            UIKit.Anchor(tabs.Root, new Vector2(0f, 1f), Vector2.one, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, 56f));
+
             var scroll = UIKit.NewScroll(parent, "Scroll", out content);
-            UIKit.Stretch((RectTransform)scroll.transform);
+            UIKit.Stretch((RectTransform)scroll.transform, 0f, 0f, 0f, 68f);
             UIKit.VStack(content.gameObject, 10f);
 
-            UIWidgets.SectionTitle(content, "Audio");
-            SliderRow("Master volume", LobbySettings.MasterVolume, v => { LobbySettings.MasterVolume = v; });
-
-            UIWidgets.SectionTitle(content, "Graphics");
-            QualityRow();
-
-            UIWidgets.SectionTitle(content, "Lobby");
-            ToggleRow("Rotate character automatically", () => LobbySettings.AutoRotateCharacter, v => LobbySettings.AutoRotateCharacter = v);
-
-            UIWidgets.SectionTitle(content, "Developer");
-            ToggleRow("Simulate matchmaking error", () => LobbySettings.SimulateMatchmakingError, v => LobbySettings.SimulateMatchmakingError = v);
-            UIWidgets.Paragraph(content, "When ON, pressing PLAY for Training fails on purpose so the error and retry UI can be tested.", UITheme.TextDim);
-
-            UIWidgets.SectionTitle(content, "About");
-            UIWidgets.Paragraph(content,
-                "Version " + Application.version + "  |  " + Application.platform + "\n" +
-                "Profile: local demo profile (offline)\n" +
-                "Online services: not connected",
-                UITheme.TextDim);
+            AppServices.Account.Changed += OnAccountChanged;
         }
 
-        protected override void OnHidden() => LobbySettings.Save();
+        private void OnDestroy()
+        {
+            if (AppServices.Account != null) AppServices.Account.Changed -= OnAccountChanged;
+        }
 
-        private Row NewRow(float height = 76f)
+        private void OnAccountChanged()
+        {
+            if (visible && tab == 6 && !(userInput != null && (userInput.isFocused || passInput.isFocused || urlInput.isFocused))) BuildTab();
+        }
+
+        protected override void OnShown()
+        {
+            visible = true;
+            bindingsDraft = null;
+            SelectTab(tab);
+        }
+
+        protected override void OnHidden()
+        {
+            visible = false;
+            capturing = null;
+            FlushSync();
+            LobbySettings.Save();
+        }
+
+        private void SelectTab(int index)
+        {
+            tab = index;
+            capturing = null;
+            tabs.SetSelected(index);
+            BuildTab();
+        }
+
+        private void BuildTab()
+        {
+            UIKit.DestroyChildren(content);
+            switch (tab)
+            {
+                case 0: BuildGeneral(); break;
+                case 1: BuildGraphics(); break;
+                case 2: BuildAudio(); break;
+                case 3: BuildGameplay(); break;
+                case 4: BuildControls(); break;
+                case 5: BuildPrivacy(); break;
+                default: BuildAccount(); break;
+            }
+        }
+
+        // ---------- change tracking ----------
+
+        private void Changed()
+        {
+            AppServices.Config.SaveSettings();
+            syncTimer = SyncDelaySeconds;
+        }
+
+        private void FlushSync()
+        {
+            if (syncTimer < 0f) return;
+            syncTimer = -1f;
+            if (AppServices.Account.State == AccountState.SignedIn) AppServices.Account.PushSettings();
+        }
+
+        private void Update()
+        {
+            if (syncTimer >= 0f)
+            {
+                syncTimer -= Time.unscaledDeltaTime;
+                if (syncTimer < 0f) { syncTimer = 0f; FlushSync(); }
+            }
+
+            if (capturing != null && visible) PollKeyCapture();
+        }
+
+        // ---------- row helpers ----------
+
+        private RectTransform NewRow(float height = 76f)
         {
             var card = UIKit.NewRounded(content, "Setting", UITheme.PanelLight);
             UIKit.SetLayout(card.gameObject, preferredHeight: height);
             UIKit.HStack(card.gameObject, 12f, 14, TextAnchor.MiddleLeft);
-            return new Row { Root = card.rectTransform };
-        }
-
-        private struct Row
-        {
-            public RectTransform Root;
+            return card.rectTransform;
         }
 
         private static Text RowLabel(RectTransform row, string text)
         {
             var label = UIKit.NewText(row, text, UITheme.FontBody, UITheme.Text, TextAnchor.MiddleLeft);
             UIKit.SetLayout(label.gameObject, minWidth: 120f, flexibleWidth: 1f);
-            UIKit.FitText(label, 18);
+            UIKit.FitText(label, 16);
             return label;
-        }
-
-        private void SliderRow(string label, float value, UnityEngine.Events.UnityAction<float> onChanged)
-        {
-            var row = NewRow();
-            RowLabel(row.Root, label);
-            var slider = UIKit.NewSlider(row.Root, "Slider", value, onChanged);
-            UIKit.SetLayout(slider.gameObject, preferredWidth: 320f, preferredHeight: 48f, flexibleWidth: 0f);
         }
 
         private void ToggleRow(string label, Func<bool> get, Action<bool> set)
         {
             var row = NewRow();
-            RowLabel(row.Root, label);
-            ButtonView button = null;
-            button = UIKit.NewButton(row.Root, "Toggle", get() ? "ON" : "OFF", get() ? UITheme.Accent : UITheme.Disabled, () =>
-            {
-                bool next = !get();
-                set(next);
-                button.SetLabel(next ? "ON" : "OFF");
-                button.SetColor(next ? UITheme.Accent : UITheme.Disabled);
-            }, UITheme.FontBody);
-            UIKit.SetLayout(button.gameObject, preferredWidth: 120f, preferredHeight: 56f, flexibleWidth: 0f);
+            RowLabel(row, label);
+            UIForm.NewToggle(row, get, v => { set(v); Changed(); });
         }
 
-        private void QualityRow()
+        private void SliderRow(string label, float min, float max, float value, bool whole, Func<float, string> format, Action<float> set)
         {
             var row = NewRow();
-            RowLabel(row.Root, "Graphics quality");
-            string[] names = QualitySettings.names;
+            RowLabel(row, label);
+            UIForm.NewValueSlider(row, min, max, value, whole, format, v => { set(v); Changed(); });
+        }
+
+        /// <summary>Button that cycles through options and shows the current one.</summary>
+        private void ChoiceRow(string label, IList<string> options, Func<int> get, Action<int> set)
+        {
+            var row = NewRow();
+            RowLabel(row, label);
             ButtonView button = null;
-            button = UIKit.NewButton(row.Root, "Quality", names[LobbySettings.QualityLevel], UITheme.Button, () =>
+            button = UIKit.NewButton(row, "Choice", options[Mathf.Clamp(get(), 0, options.Count - 1)], UITheme.Button, () =>
             {
-                int next = (LobbySettings.QualityLevel + 1) % names.Length;
-                LobbySettings.QualityLevel = next;
-                button.SetLabel(names[next]);
+                int next = (get() + 1) % options.Count;
+                set(next);
+                button.SetLabel(options[next]);
+                Changed();
             }, UITheme.FontBody);
-            UIKit.SetLayout(button.gameObject, preferredWidth: 220f, preferredHeight: 56f, flexibleWidth: 0f);
+            UIKit.SetLayout(button.gameObject, preferredWidth: 260f, preferredHeight: 56f, flexibleWidth: 0f);
+        }
+
+        private Text Note(string text, Color? color = null) => UIWidgets.Paragraph(content, text, color ?? UITheme.TextDim, 20);
+
+        private ButtonView ActionButton(string label, Color color, Action click, float height = 68f)
+        {
+            var b = UIKit.NewButton(content, "Action_" + label, label, color, () => click(), UITheme.FontBody);
+            UIKit.SetLayout(b.gameObject, preferredHeight: height);
+            return b;
+        }
+
+        // ---------- tabs ----------
+
+        private void BuildGeneral()
+        {
+            UIWidgets.SectionTitle(content, "General");
+            var lang = NewRow();
+            RowLabel(lang, "Language");
+            var l = UIKit.NewText(lang, "English", UITheme.FontBody, UITheme.TextDim, TextAnchor.MiddleRight, FontStyle.Bold);
+            UIKit.SetLayout(l.gameObject, preferredWidth: 260f, flexibleWidth: 0f);
+            Note("Only English is available; localization isn't set up yet.");
+
+            SliderRow("UI scale", 0.8f, 1.3f, S.uiScale, false, v => Mathf.RoundToInt(v * 100f) + "%", v => S.uiScale = v);
+            ToggleRow("Show crosshair", () => S.showCrosshair, v => S.showCrosshair = v);
+            ToggleRow("In-game notifications", () => S.notifications, v => S.notifications = v);
+            ToggleRow("Confirm important actions", () => S.confirmDialogs, v => S.confirmDialogs = v);
+            Note("Destructive actions (deleting an account, blocking, leaving a party) always ask for confirmation.");
+
+            UIWidgets.SectionTitle(content, "Lobby");
+            ToggleRow("Rotate character automatically", () => LobbySettings.AutoRotateCharacter, v => LobbySettings.AutoRotateCharacter = v);
+
+            UIWidgets.SectionTitle(content, "Developer");
+            ToggleRow("Simulate matchmaking error", () => LobbySettings.SimulateMatchmakingError, v => LobbySettings.SimulateMatchmakingError = v);
+            Note("When ON, pressing PLAY for Training fails on purpose so the error and retry UI can be tested.");
+
+            UIWidgets.SectionTitle(content, "Reset");
+            ActionButton("RESET SETTINGS TO DEFAULTS", UITheme.Danger, () => Ctx.Confirm("Reset settings",
+                "Restore every setting on this screen to its default? Key bindings and HUD layouts are not affected.", "RESET", () =>
+                {
+                    AppServices.Config.ResetSettings();
+                    syncTimer = SyncDelaySeconds;
+                    BuildTab();
+                }, true));
+        }
+
+        private void BuildGraphics()
+        {
+            bool mobile = DisplayApplier.IsMobile;
+            UIWidgets.SectionTitle(content, "Quality");
+
+            var presets = mobile ? new List<string> { "LOW", "MEDIUM", "HIGH" } : new List<string> { "LOW", "MEDIUM", "HIGH", "ULTRA" };
+            ChoiceRow(mobile ? "Mobile preset" : "Graphics preset", presets, () => Mathf.Clamp(S.graphicsPreset, 0, presets.Count - 1), v => S.graphicsPreset = v);
+            ChoiceRow("Texture quality", new[] { "FULL", "HALF", "QUARTER" }, () => S.textureQuality, v => S.textureQuality = v);
+            ChoiceRow("Shadows", new[] { "OFF", "LOW", "HIGH" }, () => S.shadowQuality, v => S.shadowQuality = v);
+            ToggleRow("Post-processing effects", () => S.postProcessing, v => S.postProcessing = v);
+            Note("No post-processing stack is installed yet, so this switch has no visible effect today. Shadow, texture and anti-aliasing settings do apply (Built-in Render Pipeline).");
+
+            UIWidgets.SectionTitle(content, "Frame rate");
+            var options = FramePolicy.Options(mobile, DisplayApplier.DisplayRefreshRate);
+            var labels = new List<string>();
+            foreach (int o in options) labels.Add(o == 0 ? "UNLIMITED" : o + " FPS");
+            ChoiceRow("FPS limit", labels, () => Mathf.Max(0, Array.IndexOf(options, S.fpsLimit)), v => S.fpsLimit = options[v]);
+            if (!mobile) ToggleRow("VSync", () => S.vSync, v => S.vSync = v);
+
+            var r = FramePolicy.Resolve(S.fpsLimit, S.vSync, mobile);
+            string cap = r.TargetFrameRate <= 0 ? "no cap (display/VSync decides)" : r.TargetFrameRate + " FPS maximum";
+            Note("Current: " + DisplayApplier.CurrentPreset(S).ToString().ToUpperInvariant() + " preset, " + cap + "." +
+                 (r.CapIgnoredByVSync ? "\n<color=#FFC742>VSync is on, so it overrides the FPS limit.</color>" : "") +
+                 "\nThe limit is a maximum target, not a guarantee: real FPS depends on your device, display and the scene." +
+                 (mobile ? "\nLower limits save battery and reduce heat." : ""));
+
+            if (!mobile)
+            {
+                UIWidgets.SectionTitle(content, "Display");
+                ChoiceRow("Window mode", new[] { "FULLSCREEN", "BORDERLESS", "WINDOWED" }, () => S.windowMode, v => S.windowMode = v);
+
+                var resolutions = new List<Vector2Int> { Vector2Int.zero };
+                foreach (var res in Screen.resolutions)
+                {
+                    var v = new Vector2Int(res.width, res.height);
+                    if (!resolutions.Contains(v)) resolutions.Add(v);
+                }
+                var names = new List<string>();
+                foreach (var v in resolutions) names.Add(v == Vector2Int.zero ? "NATIVE" : v.x + " x " + v.y);
+                ChoiceRow("Resolution", names, () => Mathf.Max(0, resolutions.FindIndex(v => v.x == S.resolutionWidth && v.y == S.resolutionHeight)),
+                    i => { S.resolutionWidth = resolutions[i].x; S.resolutionHeight = resolutions[i].y; });
+            }
+        }
+
+        private void BuildAudio()
+        {
+            UIWidgets.SectionTitle(content, "Volume");
+            SliderRow("Master volume", 0f, 1f, S.masterVolume, false, v => Mathf.RoundToInt(v * 100f) + "%", v => S.masterVolume = v);
+            SliderRow("Music", 0f, 1f, S.musicVolume, false, v => Mathf.RoundToInt(v * 100f) + "%", v => S.musicVolume = v);
+            SliderRow("Sound effects", 0f, 1f, S.sfxVolume, false, v => Mathf.RoundToInt(v * 100f) + "%", v => S.sfxVolume = v);
+            SliderRow("Voice chat", 0f, 1f, S.voiceVolume, false, v => Mathf.RoundToInt(v * 100f) + "%", v => S.voiceVolume = v);
+            UIWidgets.SectionTitle(content, "Mute");
+            ToggleRow("Mute music", () => S.musicMuted, v => S.musicMuted = v);
+            ToggleRow("Mute sound effects", () => S.sfxMuted, v => S.sfxMuted = v);
+            ToggleRow("Mute voice chat", () => S.voiceMuted, v => S.voiceMuted = v);
+            Note("Master volume works now. The project has no music, effects or voice-chat audio yet; these levels are stored and ready for those systems to use.");
+        }
+
+        private void BuildGameplay()
+        {
+            UIWidgets.SectionTitle(content, "Radar / minimap");
+            ChoiceRow("Orientation", new[] { "ROTATES WITH PLAYER", "NORTH UP" }, () => S.radarNorthUp ? 1 : 0, v => S.radarNorthUp = v == 1);
+            SliderRow("Size", 0.7f, 1.6f, S.radarSize, false, v => Mathf.RoundToInt(v * 100f) + "%", v => S.radarSize = v);
+            ChoiceRow("Screen corner", new[] { "TOP LEFT", "TOP RIGHT", "BOTTOM LEFT", "BOTTOM RIGHT" }, () => S.radarCorner, v => S.radarCorner = v);
+            Note("The radar is used in the Training range. In online modes it will only show what the server allows (teammates, objectives), never hidden enemies.");
+
+            UIWidgets.SectionTitle(content, "Feedback");
+            ToggleRow("Damage indicators", () => S.damageIndicators, v => S.damageIndicators = v);
+            ToggleRow("Invert vertical look", () => S.invertY, v => S.invertY = v);
+        }
+
+        private void BuildControls()
+        {
+            UIWidgets.SectionTitle(content, "Sensitivity");
+            Func<float, string> n = v => Mathf.RoundToInt(v).ToString();
+            SliderRow("General (hip-fire)", SensitivityModel.MinSlider, SensitivityModel.MaxSlider, S.sensGeneral, true, n, v => S.sensGeneral = Mathf.RoundToInt(v));
+            SliderRow("Aim down sights", SensitivityModel.MinSlider, SensitivityModel.MaxSlider, S.sensAds, true, n, v => S.sensAds = Mathf.RoundToInt(v));
+            SliderRow("Touch camera", SensitivityModel.MinSlider, SensitivityModel.MaxSlider, S.sensTouch, true, n, v => S.sensTouch = Mathf.RoundToInt(v));
+            SliderRow("Horizontal", 20, 200, S.sensHorizontal, true, v => Mathf.RoundToInt(v) + "%", v => S.sensHorizontal = Mathf.RoundToInt(v));
+            SliderRow("Vertical", 20, 200, S.sensVertical, true, v => Mathf.RoundToInt(v) + "%", v => S.sensVertical = Mathf.RoundToInt(v));
+            Note("These sliders drive the camera in the Training range. Scope-specific, gyroscope and controller sensitivity aren't offered because those features don't exist yet.");
+
+            UIWidgets.SectionTitle(content, "On-screen controls");
+            ActionButton("EDIT HUD LAYOUT", UITheme.Accent, () => Ctx.Screens.Open(LobbyScreenId.HudEditor));
+            Note("Move, resize and fade the touch controls for the current orientation. Used on phones and tablets.");
+
+            if (!DisplayApplier.IsMobile) BuildKeyBindings();
+        }
+
+        private void BuildKeyBindings()
+        {
+            if (bindingsDraft == null) bindingsDraft = AppServices.Config.Bindings.Clone();
+
+            UIWidgets.SectionTitle(content, "Keyboard & mouse");
+            bindingMessage = Note("");
+            foreach (GameAction action in Enum.GetValues(typeof(GameAction)))
+            {
+                var captured = action;
+                var row = NewRow(68f);
+                RowLabel(row, PrettyAction(action));
+                KeyCode key = bindingsDraft.Get(action);
+                bool conflict = bindingsDraft.ConflictsFor(action, key).Count > 0;
+                bool waiting = capturing == action;
+                var b = UIKit.NewButton(row, "Bind_" + action, waiting ? "PRESS A KEY..." : key.ToString().ToUpperInvariant(),
+                    waiting ? UITheme.AccentDark : (conflict ? UITheme.Danger : UITheme.Button), () => StartCapture(captured), UITheme.FontCaption + 2);
+                UIKit.SetLayout(b.gameObject, preferredWidth: 260f, preferredHeight: 52f, flexibleWidth: 0f);
+            }
+
+            var buttons = UIKit.NewRect("BindButtons", content);
+            UIKit.HStack(buttons.gameObject, 8f).childForceExpandWidth = true;
+            UIKit.SetLayout(buttons.gameObject, preferredHeight: 68f);
+            var defaults = UIKit.NewButton(buttons, "RestoreKeys", "RESTORE DEFAULTS", UITheme.Button, () =>
+            {
+                bindingsDraft.RestoreDefaults();
+                capturing = null;
+                BuildTab();
+            }, UITheme.FontBody);
+            UIKit.SetLayout(defaults.gameObject, minWidth: 0f, flexibleWidth: 1f);
+            var save = UIKit.NewButton(buttons, "SaveKeys", "SAVE BINDINGS", UITheme.Accent, SaveBindings, UITheme.FontBody);
+            UIKit.SetLayout(save.gameObject, minWidth: 0f, flexibleWidth: 1f);
+
+            RefreshBindingMessage();
+        }
+
+        private static string PrettyAction(GameAction a)
+        {
+            switch (a)
+            {
+                case GameAction.MoveForward: return "Move forward";
+                case GameAction.MoveBack: return "Move backward";
+                case GameAction.MoveLeft: return "Move left";
+                case GameAction.MoveRight: return "Move right";
+                case GameAction.Slot1: return "Weapon slot 1 (primary)";
+                case GameAction.Slot2: return "Weapon slot 2 (secondary)";
+                case GameAction.Slot3: return "Weapon slot 3 (melee)";
+                case GameAction.Map: return "Expand radar";
+                case GameAction.Inventory: return "Inventory (not used yet)";
+                case GameAction.Interact: return "Interact (not used yet)";
+                default: return a.ToString();
+            }
+        }
+
+        private void StartCapture(GameAction action)
+        {
+            capturing = action;
+            captureStartedAt = Time.unscaledTime;
+            BuildTab();
+        }
+
+        private void PollKeyCapture()
+        {
+            if (Time.unscaledTime - captureStartedAt < 0.15f) return; // ignore the click that started capture
+            if (!InputCompat.TryGetPressedKey(out var key)) return;
+
+            var action = capturing.Value;
+            capturing = null;
+            if (key != KeyCode.Escape) bindingsDraft.Set(action, key);
+            BuildTab();
+        }
+
+        private void RefreshBindingMessage()
+        {
+            if (bindingMessage == null) return;
+            var conflicts = bindingsDraft.FindAllConflicts();
+            if (conflicts.Count == 0)
+            {
+                bindingMessage.text = "Click a binding, then press the new key. Esc cancels.";
+                bindingMessage.color = UITheme.TextDim;
+                return;
+            }
+            var c = conflicts[0];
+            bindingMessage.text = $"<color=#F55257>Conflict:</color> {PrettyAction(c.Key)} and {PrettyAction(c.Value)} both use {bindingsDraft.Get(c.Key).ToString().ToUpperInvariant()}. Change one of them before saving.";
+        }
+
+        private void SaveBindings()
+        {
+            if (bindingsDraft.FindAllConflicts().Count > 0)
+            {
+                RefreshBindingMessage();
+                AppServices.Notifications.Post("Key bindings", "Resolve the highlighted conflicts first.", NotificationSeverity.Warning);
+                return;
+            }
+            AppServices.Config.Bindings.entries = bindingsDraft.Clone().entries;
+            AppServices.Config.SaveBindings();
+            AppServices.Notifications.Post("Key bindings", "Saved.", NotificationSeverity.Success);
+        }
+
+        private void BuildPrivacy()
+        {
+            bool online = AppServices.Account.State == AccountState.SignedIn;
+            UIWidgets.SectionTitle(content, "Privacy & social");
+            ChoiceRow("Friend requests from", new[] { "EVERYONE", "NOBODY" }, () => S.friendRequests == (int)Visibility.Nobody ? 1 : 0, v => S.friendRequests = v == 1 ? (int)Visibility.Nobody : (int)Visibility.Everyone);
+            ChoiceRow("Party invites from", new[] { "FRIENDS", "NOBODY" }, () => S.partyInvites == (int)Visibility.Nobody ? 1 : 0, v => S.partyInvites = v == 1 ? (int)Visibility.Nobody : (int)Visibility.Friends);
+            ChoiceRow("Online status visible to", new[] { "EVERYONE", "FRIENDS", "NOBODY" }, () => S.onlineStatus, v => S.onlineStatus = v);
+            ToggleRow("Notifications", () => S.notifications, v => S.notifications = v);
+            Note(online ? "These choices are enforced by the server." : "Saved on this device. They are enforced by the server only while you are signed in.");
+
+            UIWidgets.SectionTitle(content, "Blocked players");
+            if (!online) { Note("Sign in to manage blocked players."); return; }
+
+            var blocked = AppServices.Social.Snapshot.Blocked;
+            if (blocked.Count == 0) Note("You haven't blocked anyone.");
+            foreach (var b in blocked)
+            {
+                var player = b;
+                var row = SocialUi.Row(content, player.username, "Blocked", UITheme.Text,
+                    new RowButton("UNBLOCK", UITheme.Button, () => AppServices.Social.Unblock(player.publicId, r =>
+                    {
+                        SocialUi.Report(r, "Player unblocked.");
+                        if (visible && tab == 5) BuildTab();
+                    })));
+            }
+        }
+
+        private void BuildAccount()
+        {
+            var acct = AppServices.Account;
+            if (acct.State == AccountState.SignedIn) { BuildSignedIn(acct); return; }
+
+            UIWidgets.SectionTitle(content, "Account");
+            Note("You are using the offline profile on this device. Sign in to get a permanent Player ID, friends, parties and synced settings. " +
+                 "Online features need the development server (see server/README).");
+
+            var urlRow = NewRow(76f);
+            RowLabel(urlRow, "Server");
+            urlInput = UIForm.NewInput(urlRow, "Url", "http://192.168.1.20:8787", InputField.ContentType.Standard, 120);
+            urlInput.text = acct.ServerUrl;
+            UIKit.SetLayout(urlInput.gameObject, preferredWidth: 420f, preferredHeight: 56f, flexibleWidth: 0f);
+            urlInput.onEndEdit.AddListener(v => acct.ServerUrl = v);
+
+            var userRow = NewRow(76f);
+            RowLabel(userRow, "Username");
+            userInput = UIForm.NewInput(userRow, "User", "3-16 letters, numbers, _", InputField.ContentType.Standard, 16);
+            UIKit.SetLayout(userInput.gameObject, preferredWidth: 420f, preferredHeight: 56f, flexibleWidth: 0f);
+
+            var passRow = NewRow(76f);
+            RowLabel(passRow, "Password");
+            passInput = UIForm.NewInput(passRow, "Pass", "At least 8 characters", InputField.ContentType.Password, 128);
+            UIKit.SetLayout(passInput.gameObject, preferredWidth: 420f, preferredHeight: 56f, flexibleWidth: 0f);
+
+            var buttons = UIKit.NewRect("AuthButtons", content);
+            UIKit.HStack(buttons.gameObject, 8f).childForceExpandWidth = true;
+            UIKit.SetLayout(buttons.gameObject, preferredHeight: 72f);
+            bool busy = acct.State == AccountState.Working;
+            var signIn = UIKit.NewButton(buttons, "SignIn", busy ? "PLEASE WAIT..." : "SIGN IN", UITheme.Accent, () => Authenticate(false), UITheme.FontBody);
+            UIKit.SetLayout(signIn.gameObject, minWidth: 0f, flexibleWidth: 1f);
+            var register = UIKit.NewButton(buttons, "Register", "CREATE ACCOUNT", UITheme.Button, () => Authenticate(true), UITheme.FontBody);
+            UIKit.SetLayout(register.gameObject, minWidth: 0f, flexibleWidth: 1f);
+            signIn.SetInteractable(!busy);
+            register.SetInteractable(!busy);
+
+            accountMessage = Note(string.IsNullOrEmpty(pendingMessage) ? acct.LastError : pendingMessage, UITheme.Warning);
+            Note("Your password is sent to the server over the address above. Use https:// for anything that isn't your own computer or home network.");
+        }
+
+        private void Authenticate(bool register)
+        {
+            string url = urlInput.text.Trim();
+            if (url != AppServices.Account.ServerUrl) AppServices.Account.ServerUrl = url;
+            string user = userInput.text.Trim();
+            string pass = passInput.text;
+            pendingMessage = "";
+
+            void Done(ServiceResult r)
+            {
+                pendingMessage = r.Success ? "" : r.Error;
+                if (visible && tab == 6) BuildTab();
+            }
+            if (register) AppServices.Account.Register(user, pass, Done);
+            else AppServices.Account.SignIn(user, pass, Done);
+            BuildTab();
+        }
+
+        private void BuildSignedIn(AccountService acct)
+        {
+            var p = AppServices.Profile.Profile;
+            UIWidgets.SectionTitle(content, "Account");
+            UIWidgets.KeyValueRow(content, "Username", p.username, UITheme.Text);
+            UIWidgets.KeyValueRow(content, "Player ID", p.publicId, UITheme.Cyan);
+            UIWidgets.KeyValueRow(content, "Server", acct.ServerUrl, UITheme.TextDim);
+            UIWidgets.KeyValueRow(content, "Connection", acct.ServerReachable ? "Connected" : "Server unreachable", acct.ServerReachable ? UITheme.Success : UITheme.Warning);
+
+            ActionButton("COPY PLAYER ID", UITheme.Button, () =>
+            {
+                GUIUtility.systemCopyBuffer = p.publicId;
+                AppServices.Notifications.Post("Copied", "Player ID copied.", NotificationSeverity.Success);
+            });
+            ActionButton("SIGN OUT", UITheme.Button, () => Ctx.Confirm("Sign out", "Sign out and return to the offline profile on this device?", "SIGN OUT", () =>
+            {
+                FlushSync();
+                AppServices.Account.SignOut(_ => { if (visible) BuildTab(); });
+            }));
+
+            UIWidgets.SectionTitle(content, "Danger zone");
+            ActionButton("DELETE ACCOUNT", UITheme.Danger, () => Ctx.Dialog.AskPassword("Delete account",
+                "This permanently deletes your account, Player ID, friends and inventory from the server. It cannot be undone. Enter your password to confirm.",
+                "DELETE", password => AppServices.Account.DeleteAccount(password, r =>
+                {
+                    if (!r.Success) AppServices.Notifications.Post("Couldn't delete account", r.Error, NotificationSeverity.Error);
+                    if (visible) BuildTab();
+                })));
+            Note("Passwords and session tokens are never displayed. Your session token is stored on this device only.");
         }
     }
 }

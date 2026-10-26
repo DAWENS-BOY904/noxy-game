@@ -47,6 +47,11 @@ namespace Noxy.Lobby
             returningToFront = true;
         }
 
+        public void PlayEmote(string cosmeticId)
+        {
+            if (view != null && catalog.TryGet(cosmeticId, out var item) && item.Slot == CosmeticSlot.Emote) view.PlayEmote(item.Variant);
+        }
+
         private bool returningToFront;
 
         public void BeginDrag()

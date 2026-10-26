@@ -145,6 +145,31 @@ namespace Noxy.Lobby
 #if ENABLE_LEGACY_INPUT_MANAGER
         public static bool BackPressed => Input.GetKeyDown(KeyCode.Escape);
         public static bool KeyDown(KeyCode key) => Input.GetKeyDown(key);
+        public static bool KeyHeld(KeyCode key) => Input.GetKey(key);
+        public static Vector2 MouseDelta => new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y"));
+
+        private static KeyCode[] capturable;
+
+        /// <summary>Returns the first key or mouse button pressed this frame (used when rebinding keys).</summary>
+        public static bool TryGetPressedKey(out KeyCode key)
+        {
+            if (capturable == null)
+            {
+                var list = new System.Collections.Generic.List<KeyCode>();
+                foreach (KeyCode k in Enum.GetValues(typeof(KeyCode)))
+                {
+                    if (k == KeyCode.None || k >= KeyCode.JoystickButton0 || k == KeyCode.Mouse5 || k == KeyCode.Mouse6) continue;
+                    list.Add(k);
+                }
+                capturable = list.ToArray();
+            }
+            foreach (var k in capturable)
+            {
+                if (Input.GetKeyDown(k)) { key = k; return true; }
+            }
+            key = KeyCode.None;
+            return false;
+        }
 
         public static float RotateAxis
         {
@@ -159,6 +184,9 @@ namespace Noxy.Lobby
 #else
         public static bool BackPressed => false;
         public static bool KeyDown(KeyCode key) => false;
+        public static bool KeyHeld(KeyCode key) => false;
+        public static Vector2 MouseDelta => Vector2.zero;
+        public static bool TryGetPressedKey(out KeyCode key) { key = KeyCode.None; return false; }
         public static float RotateAxis => 0f;
 #endif
     }

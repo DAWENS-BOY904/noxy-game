@@ -130,42 +130,6 @@ namespace Noxy.Lobby
         }
     }
 
-    public sealed class FriendsScreen : InfoListScreen
-    {
-        public override LobbyScreenId Id => LobbyScreenId.Friends;
-        public override string Title => "Friends";
-        protected override string Banner => "Sample data only. The friends service isn't connected yet, so these entries are placeholders and can't be invited.";
-
-        protected override IEnumerable<RowData> GetRows()
-        {
-            yield return Friend("Vesper", "Online - In lobby", UITheme.Success);
-            yield return Friend("Rook_88", "Online - In match", UITheme.Warning);
-            yield return Friend("Mirage", "Online - In lobby", UITheme.Success);
-            yield return Friend("Tallow", "Offline - 2 hours ago", UITheme.TextDim);
-            yield return Friend("Halcyon", "Offline - yesterday", UITheme.TextDim);
-        }
-
-        private static RowData Friend(string name, string status, Color color)
-        {
-            return new RowData { Title = name, Subtitle = status, TitleColor = color == UITheme.TextDim ? UITheme.TextDim : UITheme.Text, ActionLabel = "INVITE", ActionEnabled = false };
-        }
-    }
-
-    public sealed class PartyScreen : InfoListScreen
-    {
-        public override LobbyScreenId Id => LobbyScreenId.Party;
-        public override string Title => "Team / Party";
-        protected override string Banner => "Parties need the online backend. Invites are disabled until it exists - you are queueing solo.";
-
-        protected override IEnumerable<RowData> GetRows()
-        {
-            var p = AppServices.Profile.Profile;
-            yield return new RowData { Title = p.username, Subtitle = "Level " + p.level + " - Party leader", RightText = "READY", RightColor = UITheme.Success };
-            for (int i = 2; i <= 4; i++)
-                yield return new RowData { Title = "Empty slot " + i, Subtitle = "Invite a friend to squad up", TitleColor = UITheme.TextDim, ActionLabel = "INVITE", ActionEnabled = false };
-        }
-    }
-
     public sealed class MissionsScreen : InfoListScreen
     {
         public override LobbyScreenId Id => LobbyScreenId.Missions;
@@ -198,7 +162,7 @@ namespace Noxy.Lobby
     {
         public override LobbyScreenId Id => LobbyScreenId.Rewards;
         public override string Title => "Rewards";
-        protected override string Banner => "Local mock rewards. The daily reward is stored on this device only; there is no server validation yet.";
+        protected override string Banner => "Local mock rewards, offline profile only (stored on this device, no server validation). While signed in the server owns your currency, so claiming is disabled.";
 
         protected override IEnumerable<RowData> GetRows()
         {

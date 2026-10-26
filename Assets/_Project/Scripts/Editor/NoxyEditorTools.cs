@@ -27,7 +27,7 @@ namespace Noxy.EditorTools
             Directory.CreateDirectory(ScenesFolder);
 
             BuildScene(LobbyScenePath, go => go.AddComponent<LobbyBootstrap>(), "LobbyBootstrap");
-            BuildScene(TrainingScenePath, go => go.AddComponent<TrainingPlaceholder>(), "TrainingPlaceholder");
+            BuildScene(TrainingScenePath, go => go.AddComponent<TrainingRange>(), "TrainingRange");
             RegisterBuildScenes();
 
             AssetDatabase.SaveAssets();
@@ -98,6 +98,9 @@ namespace Noxy.EditorTools
 
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
+
+            // The dev backend is plain http on a LAN address. Allowed in Development Builds only; use https for release.
+            PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentBuildsOnly;
 
             IncludeShaders();
             EnsureLegacyInputUsable();

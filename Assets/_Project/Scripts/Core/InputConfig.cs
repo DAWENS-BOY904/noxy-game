@@ -177,6 +177,21 @@ namespace Noxy.Core
 
         /// <summary>Whether the player can move/resize it in the HUD editor.</summary>
         public static bool IsMovable(HudElementId id) => id != HudElementId.Look;
+
+        /// <summary>
+        /// Controls that are wired to real gameplay in the current build. Others (grenade, interact, inventory) stay in
+        /// the saved layout for the future but are not shown, so the editor never offers dead buttons.
+        /// </summary>
+        public static bool IsSupported(HudElementId id)
+        {
+            switch (id)
+            {
+                case HudElementId.Grenade:
+                case HudElementId.Interact:
+                case HudElementId.Inventory: return false;
+                default: return true;
+            }
+        }
     }
 
     /// <summary>Positions, sizes and opacity of the on-screen controls for one orientation.</summary>
@@ -209,9 +224,9 @@ namespace Noxy.Core
                 Add(HudElementId.Slot2, 0.50f, 0.08f, 0.8f);
                 Add(HudElementId.Slot3, 0.58f, 0.08f, 0.8f);
                 Add(HudElementId.Grenade, 0.66f, 0.08f, 0.8f);
-                Add(HudElementId.Map, 0.30f, 0.92f, 0.7f);
-                Add(HudElementId.Inventory, 0.36f, 0.92f, 0.7f);
-                Add(HudElementId.Minimap, 0.12f, 0.80f, 0.8f, 1f);
+                Add(HudElementId.Map, 0.30f, 0.86f, 0.7f);
+                Add(HudElementId.Inventory, 0.36f, 0.86f, 0.7f);
+                Add(HudElementId.Minimap, 0.12f, 0.72f, 0.8f, 1f);
             }
             else
             {
@@ -228,9 +243,9 @@ namespace Noxy.Core
                 Add(HudElementId.Slot2, 0.46f, 0.04f, 0.8f);
                 Add(HudElementId.Slot3, 0.58f, 0.04f, 0.8f);
                 Add(HudElementId.Grenade, 0.70f, 0.04f, 0.8f);
-                Add(HudElementId.Map, 0.80f, 0.95f, 0.7f);
-                Add(HudElementId.Inventory, 0.90f, 0.95f, 0.7f);
-                Add(HudElementId.Minimap, 0.20f, 0.88f, 0.8f, 1f);
+                Add(HudElementId.Map, 0.80f, 0.89f, 0.7f);
+                Add(HudElementId.Inventory, 0.90f, 0.89f, 0.7f);
+                Add(HudElementId.Minimap, 0.20f, 0.84f, 0.8f, 1f);
             }
             return l;
         }

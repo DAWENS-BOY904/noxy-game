@@ -56,6 +56,9 @@ function createApp(options = {}) {
     const [max, windowMs] = config.limits[bucket];
     const k = bucket + ':' + key;
     const t = now();
+    if (hits.size > 5000) { // keep memory bounded: drop buckets whose window has fully passed
+      for (const [hk, arr] of hits) if (!arr.length || t - arr[arr.length - 1] > 120000) hits.delete(hk);
+    }
     const arr = (hits.get(k) || []).filter(x => t - x < windowMs);
     if (arr.length >= max) {
       hits.set(k, arr);
@@ -86,6 +89,8 @@ function createApp(options = {}) {
 
   function notify(playerId, kind, title, body) {
     q.run('INSERT INTO notifications(player_id, kind, title, body, created_at) VALUES (?,?,?,?,?)', playerId, kind, title, body, now());
+    // Keep only the latest 200 per player so the table cannot grow without bound.
+    q.run('DELETE FROM notifications WHERE player_id = ? AND id <= (SELECT id FROM notifications WHERE player_id = ? ORDER BY id DESC LIMIT 1 OFFSET 200)', playerId, playerId);
   }
 
   function settingsRow(playerId) {
@@ -171,6 +176,7 @@ function createApp(options = {}) {
   }
 
   function issueToken(playerId) {
+    q.run('DELETE FROM sessions WHERE expires_at < ?', now()); // purge expired sessions opportunistically
     const token = crypto.randomBytes(32).toString('base64url');
     q.run('INSERT INTO sessions(token_hash, player_id, created_at, expires_at) VALUES (?,?,?,?)', sha256(token), playerId, now(), now() + config.sessionTtlMs);
     return token;

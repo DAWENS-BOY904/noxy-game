@@ -53,27 +53,36 @@ namespace Noxy.Lobby
             var presenter = new GameObject("MatchmakingPresenter").AddComponent<MatchmakingPresenter>();
             presenter.Initialize(overlay);
             ctx.Matchmaking = presenter;
+            ctx.Dialog = DialogOverlay.Create(canvasRoot);
 
             var screens = new GameObject("ScreenManager").AddComponent<ScreenManager>();
             ctx.Screens = screens;
             screens.Initialize(ctx);
-            screens.BackInterceptor = presenter.HandleBack;
+            screens.BackInterceptor = () =>
+            {
+                if (ctx.Dialog.IsVisible) { ctx.Dialog.Close(); return true; }
+                return presenter.HandleBack();
+            };
 
             screens.Register(LobbyScreen.Create<LobbyHud>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<ProfileScreen>(ctx, safeRoot));
-            screens.Register(LobbyScreen.Create<WardrobeScreen>(ctx, safeRoot));
+            screens.Register(LobbyScreen.Create<PlayerProfileScreen>(ctx, safeRoot));
+            screens.Register(LobbyScreen.Create<VaultScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<InventoryScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<FriendsScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<PartyScreen>(ctx, safeRoot));
+            screens.Register(LobbyScreen.Create<InvitationsScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<MissionsScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<RewardsScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<ShopScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<SettingsScreen>(ctx, safeRoot));
+            screens.Register(LobbyScreen.Create<HudEditorScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<NotificationsScreen>(ctx, safeRoot));
             screens.ShowInitial();
 
-            // Matchmaking overlay must render above every screen.
+            // Dialog and matchmaking overlays must render above every screen.
             overlay.transform.SetAsLastSibling();
+            ctx.Dialog.transform.SetAsLastSibling();
         }
 
         private static void ConfigurePlatform()

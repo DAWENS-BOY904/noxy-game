@@ -69,15 +69,18 @@ namespace Noxy.Lobby
         public override ScreenStyle Style => ScreenStyle.Hud;
         public override bool InspectMode => false;
 
-        private RectTransform profileGroup, currencyGroup, actionsGroup, navGroup, modeGroup, toast;
+        private RectTransform profileGroup, currencyGroup, actionsGroup, navGroup, modeGroup, partyGroup, toast;
         private GridLayoutGroup navGrid, modeGrid;
-        private Text nameText, levelText, xpText, avatarLetter, creditsText, coresText, modeStatus, toastTitle, toastBody;
+        private Text nameText, idText, levelText, xpText, avatarLetter, creditsText, coresText, modeStatus, toastTitle, toastBody;
         private Image xpFill, toastBar;
         private ButtonView bell, playButton;
         private CanvasGroup toastGroup;
         private readonly Dictionary<LobbyScreenId, ButtonView> navButtons = new Dictionary<LobbyScreenId, ButtonView>();
         private readonly List<ModeCard> cards = new List<ModeCard>();
+        private readonly List<ButtonView> partySlots = new List<ButtonView>();
         private float toastTimer;
+
+        private const float NavRows = 3f;
 
         public override Rect FreeArea
         {
@@ -86,7 +89,7 @@ namespace Noxy.Lobby
                 Vector2 s = Ctx.Size;
                 if (!Ctx.Portrait) return new Rect(0f, 0.02f, 1f, 0.9f);
 
-                float top = 196f + 152f + 12f;
+                float top = 224f + NavRows * 72f + 16f + 12f;
                 float bottom = (modeGroup != null && modeGroup.rect.height > 10f ? modeGroup.rect.height : 360f) + 24f;
                 float y0 = Mathf.Clamp01(bottom / s.y);
                 float y1 = Mathf.Clamp01(1f - top / s.y);
@@ -103,6 +106,7 @@ namespace Noxy.Lobby
             BuildCurrency(parent);
             BuildActions(parent);
             BuildNav(parent);
+            BuildParty(parent);
             BuildModes(parent);
             BuildToast(parent);
 
@@ -110,18 +114,33 @@ namespace Noxy.Lobby
             AppServices.Notifications.Changed += RefreshNotifications;
             AppServices.Notifications.ToastRequested += ShowToast;
             AppServices.Modes.SelectionChanged += OnModeChanged;
+            AppServices.Social.Changed += RefreshParty;
+            AppServices.Account.Changed += RefreshParty;
 
             RefreshProfile();
             RefreshNotifications();
             RefreshModes();
+            RefreshParty();
         }
 
-        private void OnModeChanged(GameModeDefinition mode) => RefreshModes();
+        private void OnModeChanged(GameModeDefinition mode)
+        {
+            RefreshModes();
+            RefreshParty();
+
+            // The party leader's mode choice is shared with the party through the backend.
+            var snap = AppServices.Social.Snapshot;
+            if (!AppServices.Social.IsAvailable || !snap.InParty || mode.MaxPartySize <= 1 || snap.Party.modeId == mode.Id) return;
+            if (snap.Party.leaderPublicId != AppServices.Profile.Profile.publicId) return;
+            AppServices.Social.SetPartyMode(mode.Id, r => { if (!r.Success) SocialUi.Report(r, ""); });
+        }
 
         private void OnDestroy()
         {
             if (AppServices.Profile != null) AppServices.Profile.ProfileChanged -= RefreshProfile;
             if (AppServices.Modes != null) AppServices.Modes.SelectionChanged -= OnModeChanged;
+            if (AppServices.Social != null) AppServices.Social.Changed -= RefreshParty;
+            if (AppServices.Account != null) AppServices.Account.Changed -= RefreshParty;
             if (AppServices.Notifications != null)
             {
                 AppServices.Notifications.Changed -= RefreshNotifications;
@@ -133,6 +152,7 @@ namespace Noxy.Lobby
         {
             RefreshProfile();
             RefreshNotifications();
+            RefreshParty();
         }
 
         private void BuildProfile(Transform parent)
@@ -146,23 +166,96 @@ namespace Noxy.Lobby
             avatarLetter = UIKit.NewText(avatar.transform, "O", 44, new Color(0.1f, 0.06f, 0.02f), TextAnchor.MiddleCenter, FontStyle.Bold, "Initial");
 
             nameText = UIKit.NewText(profileGroup, "", UITheme.FontButton + 2, UITheme.Text, TextAnchor.MiddleLeft, FontStyle.Bold, "Name");
-            UIKit.Anchor(nameText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(110f, -8f), new Vector2(350f, 40f));
+            UIKit.Anchor(nameText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(110f, -4f), new Vector2(350f, 38f));
             UIKit.FitText(nameText, 22);
 
+            idText = UIKit.NewText(profileGroup, "", 22, UITheme.Cyan, TextAnchor.MiddleLeft, FontStyle.Bold, "Id");
+            UIKit.Anchor(idText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(110f, -40f), new Vector2(350f, 28f));
+            UIKit.FitText(idText, 14);
+
             levelText = UIKit.NewText(profileGroup, "", UITheme.FontBody, UITheme.Accent, TextAnchor.MiddleLeft, FontStyle.Bold, "Level");
-            UIKit.Anchor(levelText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(110f, -48f), new Vector2(110f, 30f));
+            UIKit.Anchor(levelText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(110f, -70f), new Vector2(110f, 30f));
 
             xpText = UIKit.NewText(profileGroup, "", UITheme.FontCaption, UITheme.TextDim, TextAnchor.MiddleRight, FontStyle.Normal, "Xp");
-            UIKit.Anchor(xpText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(220f, -50f), new Vector2(240f, 28f));
+            UIKit.Anchor(xpText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(220f, -72f), new Vector2(240f, 28f));
             UIKit.FitText(xpText, 18);
 
             var track = UIKit.NewRounded(profileGroup, "XpTrack", new Color(1f, 1f, 1f, 0.15f));
-            UIKit.Anchor(track.rectTransform, Vector2.zero, Vector2.zero, Vector2.zero, new Vector2(110f, 14f), new Vector2(350f, 12f));
+            UIKit.Anchor(track.rectTransform, Vector2.zero, Vector2.zero, Vector2.zero, new Vector2(110f, 12f), new Vector2(350f, 12f));
             xpFill = UIKit.NewRounded(track.transform, "XpFill", UITheme.Cyan);
             xpFill.rectTransform.anchorMin = Vector2.zero;
             xpFill.rectTransform.anchorMax = new Vector2(0.5f, 1f);
             xpFill.rectTransform.offsetMin = Vector2.zero;
             xpFill.rectTransform.offsetMax = Vector2.zero;
+        }
+
+        /// <summary>Row of up to four party slots: members with ready state, or "+" to invite.</summary>
+        private void BuildParty(Transform parent)
+        {
+            partyGroup = UIKit.NewRect("Party", parent);
+            UIKit.HStack(partyGroup.gameObject, 6f, 0, TextAnchor.MiddleCenter).childForceExpandWidth = true;
+            for (int i = 0; i < 4; i++)
+            {
+                int index = i;
+                var slot = UIKit.NewButton(partyGroup, "PartySlot" + i, "+", UITheme.Chip, () => OnPartySlot(index), 20);
+                UIKit.SetLayout(slot.gameObject, minWidth: 0f, flexibleWidth: 1f, preferredHeight: 64f);
+                partySlots.Add(slot);
+            }
+        }
+
+        private void OnPartySlot(int index)
+        {
+            var snap = AppServices.Social.Snapshot;
+            if (AppServices.Social.IsAvailable && snap.InParty && index < snap.Party.members.Count)
+            {
+                var member = snap.Party.members[index];
+                if (member.publicId == AppServices.Profile.Profile.publicId) Ctx.Screens.Open(LobbyScreenId.Party);
+                else Ctx.ViewPlayer(member.publicId);
+                return;
+            }
+
+            if (index == 0) { Ctx.Screens.Open(LobbyScreenId.Party); return; }
+            if (AppServices.Modes.Selected.MaxPartySize <= 1)
+            {
+                AppServices.Notifications.Post("Solo mode", AppServices.Modes.Selected.DisplayName + " can't be played with a party.", NotificationSeverity.Info);
+                return;
+            }
+            Ctx.Screens.Open(LobbyScreenId.Friends);
+        }
+
+        private void RefreshParty()
+        {
+            RefreshSocialBadges();
+            if (partySlots.Count == 0) return;
+            var snap = AppServices.Social.Snapshot;
+            bool online = AppServices.Social.IsAvailable;
+            int max = Mathf.Clamp(AppServices.Modes.Selected.MaxPartySize, 1, 4);
+
+            for (int i = 0; i < partySlots.Count; i++)
+            {
+                var slot = partySlots[i];
+                slot.gameObject.SetActive(i < max);
+                if (i >= max) continue;
+
+                if (online && snap.InParty && i < snap.Party.members.Count)
+                {
+                    var m = snap.Party.members[i];
+                    string dot = m.ready ? "<color=#5CDB85>\u25CF</color> " : "<color=#FFC742>\u25CF</color> ";
+                    string name = m.username.Length > 8 ? m.username.Substring(0, 8) : m.username;
+                    slot.SetLabel(dot + name + (m.isLeader ? "*" : ""));
+                    slot.SetColor(m.publicId == AppServices.Profile.Profile.publicId ? new Color(0.30f, 0.17f, 0.06f, 0.9f) : UITheme.Button);
+                }
+                else if (i == 0)
+                {
+                    slot.SetLabel("YOU");
+                    slot.SetColor(new Color(0.30f, 0.17f, 0.06f, 0.9f));
+                }
+                else
+                {
+                    slot.SetLabel("+ INVITE");
+                    slot.SetColor(UITheme.Chip);
+                }
+            }
         }
 
         private void BuildCurrency(Transform parent)
@@ -203,10 +296,11 @@ namespace Noxy.Lobby
             navGrid.cellSize = new Vector2(250f, 62f);
 
             AddNav("CHARACTER", LobbyScreenId.Profile, true);
-            AddNav("WARDROBE", LobbyScreenId.Wardrobe, true);
+            AddNav("VAULT", LobbyScreenId.Vault, true);
             AddNav("INVENTORY", LobbyScreenId.Inventory, true);
             AddNav("FRIENDS", LobbyScreenId.Friends, false);
             AddNav("PARTY", LobbyScreenId.Party, false);
+            AddNav("INVITES", LobbyScreenId.Invitations, false);
             AddNav("MISSIONS", LobbyScreenId.Missions, false);
             AddNav("REWARDS", LobbyScreenId.Rewards, false);
             AddNav("SHOP", LobbyScreenId.Shop, false);
@@ -276,14 +370,15 @@ namespace Noxy.Lobby
             Vector2 s = Ctx.Size;
             bool portrait = Ctx.Portrait;
 
-            UIKit.Anchor(profileGroup, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(16f, -12f), new Vector2(470f, 108f));
+            UIKit.Anchor(profileGroup, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(16f, -12f), new Vector2(470f, 128f));
             UIKit.Anchor(actionsGroup, Vector2.one, Vector2.one, Vector2.one, new Vector2(-16f, -12f), new Vector2(276f, 60f));
 
             if (!portrait)
             {
                 UIKit.Anchor(currencyGroup, Vector2.one, Vector2.one, Vector2.one, new Vector2(-304f, -12f), new Vector2(338f, 60f));
+                UIKit.Anchor(partyGroup, Vector2.one, Vector2.one, Vector2.one, new Vector2(-16f, -84f), new Vector2(490f, 64f));
 
-                UIKit.Anchor(navGroup, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(16f, -132f), new Vector2(250f, 8f * 62f + 7f * 8f));
+                UIKit.Anchor(navGroup, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(16f, -152f), new Vector2(250f, 9f * 62f + 8f * 8f));
                 navGrid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
                 navGrid.constraintCount = 1;
                 navGrid.cellSize = new Vector2(250f, 62f);
@@ -294,16 +389,17 @@ namespace Noxy.Lobby
                 modeGrid.cellSize = new Vector2(460f, 104f);
                 UIKit.SetLayout(playButton.gameObject, preferredHeight: 140f);
 
-                UIKit.Anchor(toast, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -132f), new Vector2(Mathf.Min(560f, s.x - 560f), 100f));
+                UIKit.Anchor(toast, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -152f), new Vector2(Mathf.Min(560f, s.x - 800f), 100f));
             }
             else
             {
-                UIKit.Anchor(currencyGroup, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(16f, -128f), new Vector2(338f, 60f));
+                UIKit.Anchor(currencyGroup, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(16f, -152f), new Vector2(338f, 60f));
+                UIKit.Anchor(partyGroup, Vector2.one, Vector2.one, Vector2.one, new Vector2(-16f, -152f), new Vector2(Mathf.Max(200f, s.x - 338f - 48f), 60f));
 
-                float navCell = Mathf.Floor((s.x - 32f - 3f * 8f) / 4f);
-                UIKit.Anchor(navGroup, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -196f), new Vector2(-32f, 2f * 72f + 8f));
+                float navCell = Mathf.Floor((s.x - 32f - 2f * 8f) / 3f);
+                UIKit.Anchor(navGroup, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -224f), new Vector2(-32f, NavRows * 72f + 2f * 8f));
                 navGrid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-                navGrid.constraintCount = 4;
+                navGrid.constraintCount = 3;
                 navGrid.cellSize = new Vector2(navCell, 72f);
 
                 UIKit.Anchor(modeGroup, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 16f), new Vector2(-32f, 0f));
@@ -313,7 +409,7 @@ namespace Noxy.Lobby
                 modeGrid.cellSize = new Vector2(modeCell, 112f);
                 UIKit.SetLayout(playButton.gameObject, preferredHeight: 120f);
 
-                UIKit.Anchor(toast, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -364f), new Vector2(Mathf.Min(560f, s.x - 32f), 100f));
+                UIKit.Anchor(toast, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -480f), new Vector2(Mathf.Min(560f, s.x - 32f), 100f));
             }
         }
 
@@ -323,12 +419,33 @@ namespace Noxy.Lobby
             var p = AppServices.Profile.Profile;
             nameText.text = p.username;
             avatarLetter.text = string.IsNullOrEmpty(p.username) ? "?" : p.username.Substring(0, 1).ToUpperInvariant();
+            string rank = string.IsNullOrEmpty(p.rank) ? "Unranked" : p.rank;
+            if (string.IsNullOrEmpty(p.publicId))
+            {
+                idText.text = "OFFLINE PROFILE";
+                idText.color = UITheme.Warning;
+            }
+            else
+            {
+                idText.text = "ID " + p.publicId + "  |  " + rank;
+                idText.color = UITheme.Cyan;
+            }
             levelText.text = "LV " + p.level;
             xpText.text = p.xp.ToString("N0") + " / " + p.XpToNextLevel.ToString("N0") + " XP";
             xpFill.rectTransform.anchorMax = new Vector2(Mathf.Clamp01((float)p.xp / Mathf.Max(1, p.XpToNextLevel)), 1f);
             creditsText.text = p.credits.ToString("N0");
             coresText.text = p.cores.ToString("N0");
             navButtons[LobbyScreenId.Rewards].SetBadge(AppServices.Profile.CanClaimDailyReward ? 1 : 0);
+            RefreshSocialBadges();
+        }
+
+        private void RefreshSocialBadges()
+        {
+            if (!navButtons.ContainsKey(LobbyScreenId.Friends)) return;
+            var snap = AppServices.Social.Snapshot;
+            bool online = AppServices.Social.IsAvailable;
+            navButtons[LobbyScreenId.Friends].SetBadge(online ? snap.Incoming.Count : 0);
+            navButtons[LobbyScreenId.Invitations].SetBadge(online ? snap.Invitations.Count : 0);
         }
 
         private void RefreshNotifications()
@@ -372,7 +489,7 @@ namespace Noxy.Lobby
                 toastGroup.alpha = Mathf.MoveTowards(toastGroup.alpha, visible ? 1f : 0f, Time.unscaledDeltaTime * 5f);
             }
 
-            if (Ctx.Screens.Current != LobbyScreenId.Lobby || Ctx.Matchmaking.IsOverlayVisible) return;
+            if (Ctx.Screens.Current != LobbyScreenId.Lobby || Ctx.Matchmaking.IsOverlayVisible || Ctx.Dialog.IsVisible) return;
 
             var modes = AppServices.Modes.Modes;
             if (InputCompat.KeyDown(KeyCode.Alpha1) && modes.Count > 0) AppServices.Modes.Select(modes[0].Id);

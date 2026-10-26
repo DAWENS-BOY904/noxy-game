@@ -169,6 +169,38 @@ namespace Noxy.Core
         }
     }
 
+    public enum RadarMarkerKind { Teammate, Objective, SafeZone, Mission, PracticeTarget, Enemy }
+
+    /// <summary>
+    /// What the radar is allowed to show per game mode. Enemies are never allowed: in online modes the server decides
+    /// what a client may know, and it must not stream hidden enemy positions just so a radar can draw them.
+    /// </summary>
+    public static class RadarPolicy
+    {
+        public static bool Allows(string modeId, RadarMarkerKind kind)
+        {
+            if (kind == RadarMarkerKind.Enemy) return false;
+            switch (modeId)
+            {
+                case GameModeIds.Training:
+                    return kind == RadarMarkerKind.PracticeTarget || kind == RadarMarkerKind.Objective;
+                case GameModeIds.BattleRoyale:
+                    return kind == RadarMarkerKind.Teammate || kind == RadarMarkerKind.SafeZone || kind == RadarMarkerKind.Objective || kind == RadarMarkerKind.Mission;
+                case GameModeIds.LoneWolf:
+                    return kind == RadarMarkerKind.Objective;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>World distance (meters) shown at the radar edge.</summary>
+        public static float Range(string modeId, bool expanded)
+        {
+            float baseRange = modeId == GameModeIds.BattleRoyale ? 120f : modeId == GameModeIds.LoneWolf ? 40f : 45f;
+            return expanded ? baseRange * 2f : baseRange;
+        }
+    }
+
     /// <summary>Radar coordinate math (no scene dependencies).</summary>
     public static class RadarMath
     {

@@ -459,6 +459,24 @@ namespace Noxy.Tests
     public class RadarMathTests
     {
         [Test]
+        public void Radar_NeverShowsEnemies_InAnyMode()
+        {
+            foreach (var mode in new[] { GameModeIds.Training, GameModeIds.BattleRoyale, GameModeIds.LoneWolf, "unknown" })
+                Assert.IsFalse(RadarPolicy.Allows(mode, RadarMarkerKind.Enemy), mode);
+        }
+
+        [Test]
+        public void Radar_PerModeMarkerRules()
+        {
+            Assert.IsTrue(RadarPolicy.Allows(GameModeIds.Training, RadarMarkerKind.PracticeTarget));
+            Assert.IsFalse(RadarPolicy.Allows(GameModeIds.BattleRoyale, RadarMarkerKind.PracticeTarget));
+            Assert.IsTrue(RadarPolicy.Allows(GameModeIds.BattleRoyale, RadarMarkerKind.Teammate));
+            Assert.IsTrue(RadarPolicy.Allows(GameModeIds.BattleRoyale, RadarMarkerKind.SafeZone));
+            Assert.IsFalse(RadarPolicy.Allows(GameModeIds.LoneWolf, RadarMarkerKind.Teammate));
+            Assert.Greater(RadarPolicy.Range(GameModeIds.Training, true), RadarPolicy.Range(GameModeIds.Training, false));
+        }
+
+        [Test]
         public void TargetAhead_IsUpWhenRotating()
         {
             var b = RadarMath.ToRadar(0f, 10f, 0f, 50f, false);

@@ -11,6 +11,12 @@ namespace Noxy.Lobby
     {
         Transform Root { get; }
         void Apply(Loadout loadout, ICosmeticCatalog catalog);
+
+        /// <summary>Plays the emote animation (variant comes from the cosmetic's Variant).</summary>
+        void PlayEmote(int variant);
+
+        /// <summary>Shows the weapon prop for the selected weapon slot (0 primary, 1 secondary, 2 melee).</summary>
+        void SetHeldWeapon(int slot);
     }
 
     public static class CharacterViewFactory
@@ -59,6 +65,22 @@ namespace Noxy.Lobby
                 if (!byName.TryGetValue(item.Id, out var node)) continue;
                 node.gameObject.SetActive(loadout.Get(item.Slot) == item.Id);
             }
+        }
+
+        public void PlayEmote(int variant)
+        {
+            var animator = GetComponentInChildren<Animator>();
+            if (animator == null) return;
+            string trigger = "Emote" + variant;
+            foreach (var p in animator.parameters)
+                if (p.name == trigger) { animator.SetTrigger(trigger); return; }
+        }
+
+        public void SetHeldWeapon(int slot)
+        {
+            var animator = GetComponentInChildren<Animator>();
+            if (animator != null) foreach (var p in animator.parameters)
+                if (p.name == "WeaponSlot") { animator.SetInteger("WeaponSlot", slot); return; }
         }
     }
 
@@ -175,6 +197,66 @@ namespace Noxy.Lobby
             if (mask != null) BuildMask(mask);
             if (headgear != null) BuildHeadgear(headgear);
             if (pack != null) BuildBackpack(pack);
+            var fallbackSkin = new CosmeticItem { Id = "", PrimaryColor = new Color(0.16f, 0.18f, 0.21f), SecondaryColor = new Color(0.42f, 0.45f, 0.5f) };
+            BuildWeapon(catalog.TryGet(loadout.weaponSkin, out var weapon) ? weapon : fallbackSkin);
+        }
+
+        private GameObject weaponObj, sidearmObj, bladeObj;
+        private float emoteTimer;
+        private int emoteVariant;
+        private int heldSlot;
+        private const float EmoteSeconds = 2.6f;
+
+        public void PlayEmote(int variant)
+        {
+            emoteVariant = variant;
+            emoteTimer = EmoteSeconds;
+        }
+
+        public void SetHeldWeapon(int slot)
+        {
+            heldSlot = slot;
+            if (weaponObj != null) weaponObj.SetActive(slot == 0);
+            if (sidearmObj != null) sidearmObj.SetActive(slot == 1);
+            if (bladeObj != null) bladeObj.SetActive(slot == 2);
+        }
+
+        private void BuildWeapon(CosmeticItem item)
+        {
+            var dark = Lit(new Color(0.08f, 0.08f, 0.1f));
+
+            // Sidearm and blade use fixed colors: the weapon skin applies to the primary rifle.
+            sidearmObj = new GameObject("Sidearm");
+            sidearmObj.transform.SetParent(pelvis, false);
+            sidearmObj.transform.localPosition = new Vector3(0.2f, 0.28f, 0.22f);
+            sidearmObj.transform.localRotation = Quaternion.Euler(-15f, 5f, 0f);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "Slide", sidearmObj.transform, new Vector3(0f, 0.02f, 0.08f), new Vector3(0.05f, 0.06f, 0.24f), dark);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "Grip", sidearmObj.transform, new Vector3(0f, -0.07f, 0f), new Vector3(0.045f, 0.12f, 0.06f), Lit(new Color(0.2f, 0.2f, 0.24f)));
+
+            bladeObj = new GameObject("Blade");
+            bladeObj.transform.SetParent(pelvis, false);
+            bladeObj.transform.localPosition = new Vector3(0.2f, 0.28f, 0.22f);
+            bladeObj.transform.localRotation = Quaternion.Euler(-70f, 0f, 0f);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "Edge", bladeObj.transform, new Vector3(0f, 0f, 0.14f), new Vector3(0.025f, 0.07f, 0.3f), Lit(new Color(0.75f, 0.78f, 0.82f), 0.9f, 0.8f));
+            MaterialFactory.Primitive(PrimitiveType.Cube, "Handle", bladeObj.transform, new Vector3(0f, 0f, -0.06f), new Vector3(0.04f, 0.05f, 0.12f), dark);
+
+            weaponObj = new GameObject("Weapon");
+            weaponObj.transform.SetParent(pelvis, false);
+            weaponObj.transform.localPosition = new Vector3(0.12f, 0.3f, 0.26f);
+            weaponObj.transform.localRotation = Quaternion.Euler(-25f, 8f, 0f);
+            var t = weaponObj.transform;
+            var body = Lit(item.PrimaryColor, item.Rarity == CosmeticRarity.Legendary ? 0.9f : 0.2f, 0.55f);
+            var accent = Lit(item.SecondaryColor, 0.2f, 0.5f);
+
+            MaterialFactory.Primitive(PrimitiveType.Cube, "Receiver", t, new Vector3(0f, 0f, 0f), new Vector3(0.07f, 0.1f, 0.5f), body);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "Handguard", t, new Vector3(0f, 0.005f, 0.34f), new Vector3(0.065f, 0.075f, 0.24f), accent);
+            var barrel = MaterialFactory.Primitive(PrimitiveType.Cylinder, "Barrel", t, new Vector3(0f, 0.01f, 0.58f), new Vector3(0.03f, 0.14f, 0.03f), dark);
+            barrel.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "Magazine", t, new Vector3(0f, -0.14f, 0.06f), new Vector3(0.05f, 0.2f, 0.09f), dark);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "Stock", t, new Vector3(0f, -0.02f, -0.32f), new Vector3(0.06f, 0.14f, 0.22f), accent);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "Sight", t, new Vector3(0f, 0.075f, 0.1f), new Vector3(0.03f, 0.04f, 0.12f), dark);
+
+            SetHeldWeapon(heldSlot);
         }
 
         private void ClearDynamic()
@@ -182,6 +264,9 @@ namespace Noxy.Lobby
             if (maskObj != null) Destroy(maskObj);
             if (headgearObj != null) Destroy(headgearObj);
             if (packObj != null) Destroy(packObj);
+            if (weaponObj != null) Destroy(weaponObj);
+            if (sidearmObj != null) Destroy(sidearmObj);
+            if (bladeObj != null) Destroy(bladeObj);
             foreach (var m in dynamicMaterials) if (m != null) Destroy(m);
             dynamicMaterials.Clear();
         }
@@ -300,6 +385,39 @@ namespace Noxy.Lobby
             hipR.localRotation = Quaternion.Euler(0f, 4f, -2f + Mathf.Sin(t * 0.5f) * 0.8f);
             kneeL.localRotation = Quaternion.identity;
             kneeR.localRotation = Quaternion.identity;
+
+            if (emoteTimer > 0f) AnimateEmote(t);
+        }
+
+        private void AnimateEmote(float t)
+        {
+            emoteTimer -= Time.unscaledDeltaTime;
+            float p = 1f - Mathf.Clamp01(emoteTimer / EmoteSeconds);        // 0 -> 1 over the emote
+            float blend = Mathf.Clamp01(Mathf.Min(p, 1f - p) * 6f);          // ease in and out
+            switch (emoteVariant)
+            {
+                case 1: // flex
+                    shoulderL.localRotation = Quaternion.Slerp(shoulderL.localRotation, Quaternion.Euler(0f, 0f, -75f), blend);
+                    shoulderR.localRotation = Quaternion.Slerp(shoulderR.localRotation, Quaternion.Euler(0f, 0f, 75f), blend);
+                    elbowL.localRotation = Quaternion.Slerp(elbowL.localRotation, Quaternion.Euler(0f, 0f, 110f + Mathf.Sin(t * 9f) * 6f), blend);
+                    elbowR.localRotation = Quaternion.Slerp(elbowR.localRotation, Quaternion.Euler(0f, 0f, -110f - Mathf.Sin(t * 9f) * 6f), blend);
+                    break;
+                case 2: // shuffle
+                    pelvis.localRotation = Quaternion.Euler(0f, Mathf.Sin(t * 8f) * 14f, Mathf.Sin(t * 4f) * 4f);
+                    shoulderL.localRotation = Quaternion.Euler(Mathf.Sin(t * 8f) * 35f, 0f, -20f);
+                    shoulderR.localRotation = Quaternion.Euler(-Mathf.Sin(t * 8f) * 35f, 0f, 20f);
+                    hipL.localRotation = Quaternion.Euler(Mathf.Sin(t * 8f) * 20f, 0f, 0f);
+                    hipR.localRotation = Quaternion.Euler(-Mathf.Sin(t * 8f) * 20f, 0f, 0f);
+                    break;
+                case 3: // salute
+                    shoulderR.localRotation = Quaternion.Slerp(shoulderR.localRotation, Quaternion.Euler(-30f, 0f, 125f), blend);
+                    elbowR.localRotation = Quaternion.Slerp(elbowR.localRotation, Quaternion.Euler(0f, 0f, -125f), blend);
+                    break;
+                default: // wave
+                    shoulderR.localRotation = Quaternion.Slerp(shoulderR.localRotation, Quaternion.Euler(0f, 0f, 150f), blend);
+                    elbowR.localRotation = Quaternion.Slerp(elbowR.localRotation, Quaternion.Euler(0f, 0f, Mathf.Sin(t * 12f) * 28f), blend);
+                    break;
+            }
         }
 
         private void OnDestroy()
