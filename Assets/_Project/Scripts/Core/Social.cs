@@ -114,7 +114,7 @@ namespace Noxy.Core
 
     [Serializable] public sealed class BlockedDto { public string publicId = "", username = ""; }
     [Serializable] public sealed class BlocksDto { public List<BlockedDto> blocked = new List<BlockedDto>(); }
-    [Serializable] public sealed class OkDto { public bool ok; }
+    [Serializable] public sealed class OkDto { public bool ok; public bool duplicate; }
 
     [Serializable] public sealed class ErrorBodyDto { public string code = "", message = ""; public int retryAfter; }
     [Serializable] public sealed class ErrorEnvelopeDto { public ErrorBodyDto error = new ErrorBodyDto(); }

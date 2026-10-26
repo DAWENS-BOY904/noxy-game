@@ -26,6 +26,7 @@ namespace Noxy.Lobby
 
         protected virtual string Banner => null;
         protected virtual bool HasFooter => false;
+        protected virtual float FooterHeight => 72f;
         protected abstract IEnumerable<RowData> GetRows();
         protected virtual void BuildFooter(RectTransform footer) { }
 
@@ -46,9 +47,9 @@ namespace Noxy.Lobby
             if (HasFooter)
             {
                 var footer = UIKit.NewRect("Footer", parent);
-                UIKit.Anchor(footer, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, 72f));
+                UIKit.Anchor(footer, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, FooterHeight));
                 BuildFooter(footer);
-                bottom = 84f;
+                bottom = FooterHeight + 12f;
             }
 
             var scroll = UIKit.NewScroll(parent, "List", out listContent);

@@ -218,6 +218,12 @@ function create(ctx) {
     const x = Buffer.from(String(a)); const y = Buffer.from(String(b));
     return x.length === y.length && crypto.timingSafeEqual(x, y);
   };
+  // Shared by every trusted game-server endpoint (match results, clan wars, map events, fair play).
+  function requireServerKey(req, ip) {
+    rateLimit('internal', ip);
+    if (!eco.matchServerKey) fail(503, 'not_configured', 'Game-server endpoints are disabled (no server key configured).');
+    if (!safeEqual(req.headers['x-noxy-server-key'] || '', eco.matchServerKey)) fail(401, 'unauthorized', 'Invalid server key.');
+  }
   const hmac = (secret, raw) => crypto.createHmac('sha256', secret).update(raw).digest('hex');
 
   // ---------- wallet ----------
@@ -603,7 +609,7 @@ function create(ctx) {
     });
   }
 
-  return { install, apply, walletView, ensureWallet, settle, processMatch, setting };
+  return { install, requireServerKey, apply, walletView, ensureWallet, settle, processMatch, setting };
 }
 
 module.exports = { create, DEFAULT_SETTINGS };

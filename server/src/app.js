@@ -19,14 +19,14 @@ const DEFAULT_CONFIG = {
   maxPendingSentInvites: 5,
   presenceTimeoutMs: 30 * 1000,
   usernameChangeCooldownMs: 24 * 3600 * 1000,
-  limits: { auth: [20, 60000], search: [20, 60000], invite: [30, 60000], friendRequest: [20, 60000], report: [5, 60000], purchase: [20, 60000], claim: [30, 60000], internal: [600, 60000] },
+  limits: { auth: [20, 60000], search: [20, 60000], invite: [30, 60000], friendRequest: [20, 60000], report: [5, 60000], purchase: [20, 60000], claim: [30, 60000], internal: [600, 60000], clan: [30, 60000], clanChat: [20, 10000], appeal: [3, 3600000], admin: [120, 60000] },
   // Secrets come from the environment (see index.js); empty means the feature is disabled.
   economy: { matchServerKey: '', testPayments: false, verifiers: {}, webhookSecrets: {}, adsSecret: '' },
   idGenerator: () => String(crypto.randomInt(1_000_000_000, 10_000_000_000)),
 };
 
 const CHEAT_CATEGORIES = ['aimbot', 'wallhack', 'speed_hack', 'abnormal_headshots', 'shoots_through_walls', 'walks_through_walls', 'abnormal_movement'];
-const REPORT_CATEGORIES = [...CHEAT_CATEGORIES, 'abusive_chat', 'offensive_name', 'afk', 'other'];
+const REPORT_CATEGORIES = [...CHEAT_CATEGORIES, 'abusive_chat', 'harassment', 'offensive_name', 'afk', 'disruptive', 'other'];
 
 class ApiError extends Error {
   constructor(status, code, message, extra) {
@@ -307,6 +307,12 @@ function createApp(options = {}) {
   }
 
   const economy = require('./economy').create({ db, q, tx, fail, now, config, catalog, requireString, rateLimit, playerByPublicId, notify });
+  const modctx = { db, q, tx, fail, now, config, catalog, requireString, rateLimit, playerByPublicId, notify, economy, requireServerKey: economy.requireServerKey };
+  const fairplay = modctx.fairplay = require('./fairplay').create(modctx);
+  const clans = modctx.clans = require('./clans').create(modctx);
+  const clanwars = modctx.clanwars = require('./clanwars').create(modctx);
+  const companions = require('./companions').create(modctx);
+  const mapevents = require('./mapevents').create(modctx);
 
   // ---------- routes ----------
   const routes = [];
@@ -378,6 +384,11 @@ function createApp(options = {}) {
   });
 
   economy.install(route);
+  fairplay.install(route);
+  clans.install(route);
+  clanwars.install(route);
+  companions.install(route);
+  mapevents.install(route);
 
   route('GET', '/api/me/settings', ({ me }) => {
     const s = settingsRow(me.id);
@@ -443,10 +454,12 @@ function createApp(options = {}) {
     const reason = requireString(body.reason, 'reason', 3, 300);
     const category = body.category === undefined ? 'other' : String(body.category);
     if (!REPORT_CATEGORIES.includes(category)) fail(400, 'invalid_category', 'Unknown report category.');
+    fairplay.checkReporter(me.id);
+    const evidence = fairplay.cleanEvidence(body.evidence), matchId = fairplay.cleanMatchId(body.matchId);
     const dayAgo = now() - 86400000;
     const dup = q.one('SELECT 1 AS x FROM reports WHERE reporter_id=? AND target_id=? AND category=? AND created_at>?', me.id, p.id, category, dayAgo);
     if (dup) return { status: 200, body: { ok: true, duplicate: true } };
-    q.run('INSERT INTO reports(reporter_id, target_id, reason, category, created_at) VALUES (?,?,?,?,?)', me.id, p.id, reason, category, now());
+    q.run('INSERT INTO reports(reporter_id, target_id, reason, category, created_at, evidence, match_id) VALUES (?,?,?,?,?,?,?)', me.id, p.id, reason, category, now(), evidence, matchId);
     // Reports only queue a review. Distinct reporters on a cheat category raise a strike; nobody is auto-banned here.
     if (CHEAT_CATEGORIES.includes(category)) {
       const distinct = q.one('SELECT COUNT(DISTINCT reporter_id) AS n FROM reports WHERE target_id=? AND category IN (' + CHEAT_CATEGORIES.map(() => '?').join(',') + ') AND created_at>?',
@@ -728,7 +741,7 @@ function createApp(options = {}) {
     }
   }
 
-  return { handle, db, config, economy, close: () => db.close() };
+  return { handle, db, config, economy, fairplay, clans, clanwars, companions, mapevents, close: () => db.close() };
 }
 
 module.exports = { createApp, catalog };

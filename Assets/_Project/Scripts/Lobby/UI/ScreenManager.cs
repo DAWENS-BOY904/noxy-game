@@ -21,7 +21,11 @@ namespace Noxy.Lobby
         Settings,
         HudEditor,
         Notifications,
-        MatchResults
+        MatchResults,
+        Clans,
+        ClanWars,
+        Companions,
+        Reputation
     }
 
     /// <summary>Shared references handed to every screen. Avoids singletons inside UI code.</summary>

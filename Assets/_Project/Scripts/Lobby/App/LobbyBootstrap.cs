@@ -80,6 +80,10 @@ namespace Noxy.Lobby
             screens.Register(LobbyScreen.Create<HudEditorScreen>(ctx, safeRoot));
             screens.Register(LobbyScreen.Create<NotificationsScreen>(ctx, safeRoot));
         screens.Register(LobbyScreen.Create<MatchResultsScreen>(ctx, safeRoot));
+            screens.Register(LobbyScreen.Create<ClansScreen>(ctx, safeRoot));
+            screens.Register(LobbyScreen.Create<ClanWarsScreen>(ctx, safeRoot));
+            screens.Register(LobbyScreen.Create<CompanionsScreen>(ctx, safeRoot));
+            screens.Register(LobbyScreen.Create<ReputationScreen>(ctx, safeRoot));
             screens.ShowInitial();
             screens.Changed += (from, to) => background.SetKey(to == LobbyScreenId.Lobby || to == LobbyScreenId.Vault || to == LobbyScreenId.Profile
                 ? BackgroundLibrary.Lobby : BackgroundLibrary.Menu);

@@ -126,6 +126,123 @@ namespace Noxy.IntegrationTests
                 try { File.Delete(dbFile + ext); } catch (Exception) { }
         }
 
+        private static RemoteCommunityService Community(TestClient c) => new RemoteCommunityService(c.Api) { SignedIn = true };
+        private static ApiResult<T> Get<T>(Action<Action<ApiResult<T>>> call) where T : class { ApiResult<T> r = null; call(x => r = x); return r; }
+
+        [Test]
+        public void ClanLifecycleThroughTheClient()
+        {
+            var a = new TestClient(url); a.Register("it_clan_a");
+            var b = new TestClient(url); b.Register("it_clan_b");
+            var ca = Community(a); var cb = Community(b);
+
+            var created = Get<ClanDto>(d => ca.CreateClan("Iron Owls", "OWL", "We play fair.", "request", d));
+            Assert.IsTrue(created.Ok, created.Message);
+            int clanId = created.Value.id;
+            Assert.AreEqual("leader", created.Value.myRole);
+
+            var dup = Get<ClanDto>(d => cb.CreateClan("iron owls", "XYZ", "", "request", d));
+            Assert.IsFalse(dup.Ok);
+            Assert.AreEqual("name_taken", dup.Code);
+
+            var found = Get<ClanListDto>(d => cb.SearchClans("Iron", d));
+            Assert.IsTrue(found.Ok);
+            Assert.IsTrue(found.Value.clans.Exists(c => c.id == clanId));
+
+            var applied = Get<ApplyResultDto>(d => cb.ApplyToClan(clanId, "let me in", d));
+            Assert.IsTrue(applied.Ok, applied.Message);
+            Assert.IsFalse(applied.Value.joined);
+
+            // A regular applicant cannot approve themselves.
+            var self = Get<OkDto>(d => cb.RespondApplication(applied.Value.applicationId, "accept", d));
+            Assert.IsFalse(self.Ok);
+
+            var mine = Get<MyClanDto>(d => ca.LoadMyClan(d));
+            Assert.AreEqual(1, mine.Value.clan.applications.Count);
+            Assert.IsTrue(Get<OkDto>(d => ca.RespondApplication(mine.Value.clan.applications[0].id, "accept", d)).Ok);
+
+            var bMine = Get<MyClanDto>(d => cb.LoadMyClan(d));
+            Assert.AreEqual("member", bMine.Value.clan.myRole);
+
+            Assert.IsTrue(Get<OkDto>(d => cb.SendChat(clanId, "hello clan", d)).Ok);
+            var chat = Get<ChatDto>(d => ca.LoadChat(clanId, 0, d));
+            Assert.AreEqual("hello clan", chat.Value.messages[chat.Value.messages.Count - 1].text);
+
+            // Members cannot use leader powers; the server rejects them regardless of what the UI shows.
+            var leaderId = a.Profile.Profile.publicId;
+            Assert.IsFalse(Get<OkDto>(d => cb.MemberAction(clanId, leaderId, "kick", d)).Ok);
+            Assert.IsFalse(Get<OkDto>(d => cb.DisbandClan(clanId, d)).Ok);
+
+            Assert.IsTrue(Get<OkDto>(d => cb.LeaveClan(clanId, d)).Ok);
+            Assert.IsNull(Get<MyClanDto>(d => cb.LoadMyClan(d)).Value.clan);
+        }
+
+        [Test]
+        public void CommunityServicesRefuseWhenSignedOut()
+        {
+            var off = new OfflineCommunityService();
+            var r = Get<MyClanDto>(d => off.LoadMyClan(d));
+            Assert.IsFalse(r.Ok); Assert.AreEqual("offline", r.Code);
+
+            var remote = new RemoteCommunityService(new ApiClient(new HttpClientTransport(), url));
+            var r2 = Get<CompanionsDto>(d => remote.LoadCompanions(d));
+            Assert.IsFalse(r2.Ok); Assert.AreEqual("offline", r2.Code);
+        }
+
+        [Test]
+        public void CompanionCatalogIsServerPricedAndUnownedCannotBeEquipped()
+        {
+            var a = new TestClient(url); a.Register("it_comp_a");
+            var ca = Community(a);
+            var list = Get<CompanionsDto>(d => ca.LoadCompanions(d));
+            Assert.IsTrue(list.Ok, list.Message);
+            Assert.GreaterOrEqual(list.Value.companions.Count, 5);
+            Assert.IsNull(list.Value.equipped == null || string.IsNullOrEmpty(list.Value.equipped.companionId) ? null : "equipped");
+
+            var locked = list.Value.companions.Find(c => !c.owned);
+            var equip = Get<CompanionsDto>(d => ca.EquipCompanion(locked.id, "default", d));
+            Assert.IsFalse(equip.Ok);
+
+            // A brand-new account has no funds; the server must refuse and not grant anything.
+            var pricey = list.Value.companions.Find(c => !c.owned && c.priceCoins > 0);
+            var unlock = Get<CompanionsDto>(d => ca.UnlockCompanion(pricey.id, "default", "coins", d));
+            Assert.IsFalse(unlock.Ok);
+            Assert.IsFalse(Get<CompanionsDto>(d => ca.LoadCompanions(d)).Value.companions.Exists(c => c.owned && c.id == pricey.id));
+        }
+
+        [Test]
+        public void ReportsAreAcceptedButNeverPunishAutomatically()
+        {
+            var a = new TestClient(url); a.Register("it_fair_a");
+            var b = new TestClient(url); b.Register("it_fair_b");
+            var ca = Community(a);
+            var before = Get<FairPlayDto>(d => Community(b).LoadFairPlay(d));
+            Assert.IsTrue(before.Ok, before.Message);
+
+            var rep = Get<OkDto>(d => ca.ReportPlayer(b.Profile.Profile.publicId, "aimbot", "Shot me through a wall repeatedly", null, null, d));
+            Assert.IsTrue(rep.Ok, rep.Message);
+
+            var after = Get<FairPlayDto>(d => Community(b).LoadFairPlay(d));
+            Assert.AreEqual(before.Value.score, after.Value.score);
+            Assert.AreEqual(0, after.Value.myReports.Count); // reports about you are never visible to you
+
+            var self = Get<OkDto>(d => ca.ReportPlayer(a.Profile.Profile.publicId, "aimbot", "reporting myself", null, null, d));
+            Assert.IsFalse(self.Ok);
+
+            var rules = Get<FairRulesDto>(d => ca.LoadFairPlayRules(d));
+            Assert.IsTrue(rules.Ok);
+            Assert.IsTrue(rules.Value.reportsNeverAutoPunish);
+        }
+
+        [Test]
+        public void WarOverviewForPlayerWithoutClanHasNoMatch()
+        {
+            var a = new TestClient(url); a.Register("it_war_a");
+            var ov = Get<WarOverviewDto>(d => Community(a).LoadWarOverview(d));
+            Assert.IsTrue(ov.Ok, ov.Message);
+            Assert.AreEqual(0, ov.Value.clanId);
+            Assert.IsNull(ov.Value.activeMatch);
+        }
         [Test]
         public void RegisterGivesTenDigitIdAndMirrorsServerProfile()
         {

@@ -78,6 +78,7 @@ namespace Noxy.Core
 
         /// <summary>Optional wallet/store client; kept in sync with the signed-in state.</summary>
         public RemoteEconomyService Economy { get; set; }
+        public RemoteCommunityService Community { get; set; }
 
         public string ServerUrl
         {
@@ -158,6 +159,7 @@ namespace Noxy.Core
                 profile.ApplyServerSnapshot(AccountMapper.ToProfile(me, inv.Value));
                 social.SignedIn = true;
                 if (Economy != null) { Economy.SignedIn = true; Economy.RefreshWallet(); }
+                if (Community != null) Community.SignedIn = true;
                 lastNotificationId = 0;
                 firstNotificationPull = true;
                 heartbeatTimer = 0f;
@@ -216,6 +218,7 @@ namespace Noxy.Core
             social.SignedIn = false;
             social.Clear();
             if (Economy != null) { Economy.SignedIn = false; Economy.Clear(); }
+            if (Community != null) Community.SignedIn = false;
             profile.RevertToLocal();
             PublicId = "";
             Username = "";

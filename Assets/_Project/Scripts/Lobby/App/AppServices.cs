@@ -29,13 +29,16 @@ namespace Noxy.Lobby
         /// <summary>Wallet, store, missions and rewards. Server-authoritative; unavailable while offline.</summary>
         public static IEconomyService Economy { get; private set; } = new OfflineEconomyService();
 
+        /// <summary>Clans, clan wars, companions, map events and fair play. Server-authoritative; unavailable while offline.</summary>
+        public static ICommunityService Community { get; private set; } = new OfflineCommunityService();
+
         public static bool IsInitialized => Profile != null;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
         {
             Catalog = null; Profile = null; Config = null; Modes = null; Matchmaking = null;
-            OfflineMatchmaking = null; Notifications = null; Account = null; Social = null; Auth = null; Economy = new OfflineEconomyService();
+            OfflineMatchmaking = null; Notifications = null; Account = null; Social = null; Auth = null; Economy = new OfflineEconomyService(); Community = new OfflineCommunityService();
             OfflineMode = false; NativeSignIn = null;
         }
 
@@ -64,6 +67,10 @@ namespace Noxy.Lobby
             economy.BalanceChanged = () => Account.ResyncInventory();
             Account.Economy = economy;
             Economy = economy;
+            var social2 = new RemoteCommunityService(api);
+            social2.BalanceChanged = () => economy.RefreshWallet();
+            Account.Community = social2;
+            Community = social2;
 
             var supabase = SupabaseConfigLoader.Load();
             Auth = new AuthService(new SupabaseAuthClient(new UnityWebRequestTransport(), supabase), new PrefsSessionStore(), supabase);
