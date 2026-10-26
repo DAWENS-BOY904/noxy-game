@@ -18,7 +18,7 @@ namespace Noxy.EditorTools
         [MenuItem("Noxy/Build Lobby + Training Scenes")]
         public static void BuildAll()
         {
-            if (EditorApplication.isPlayingOrWillEnterPlaymode)
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 Debug.LogWarning("[Noxy] Stop Play Mode before building scenes.");
                 return;
@@ -40,7 +40,7 @@ namespace Noxy.EditorTools
         [MenuItem("Noxy/Build Battle Royale Scene")]
         public static void BuildBattleRoyale()
         {
-            if (EditorApplication.isPlayingOrWillEnterPlaymode)
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 Debug.LogWarning("[Noxy] Stop Play Mode before building scenes.");
                 return;
@@ -135,7 +135,7 @@ namespace Noxy.EditorTools
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
 
             // The dev backend is plain http on a LAN address. Allowed in Development Builds only; use https for release.
-            PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentBuildsOnly;
+            PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentOnly;
 
             IncludeShaders();
             EnsureLegacyInputUsable();
@@ -200,7 +200,7 @@ namespace Noxy.EditorTools
 
         private static void Run()
         {
-            if (EditorApplication.isPlayingOrWillEnterPlaymode || SessionState.GetBool(TriedKey, false)) return;
+            if (EditorApplication.isPlayingOrWillChangePlaymode || SessionState.GetBool(TriedKey, false)) return;
             SessionState.SetBool(TriedKey, true);
 
             bool missing = !File.Exists(NoxySceneBuilder.LobbyScenePath) || !File.Exists(NoxySceneBuilder.TrainingScenePath) || !File.Exists(NoxySceneBuilder.BattleRoyaleScenePath);

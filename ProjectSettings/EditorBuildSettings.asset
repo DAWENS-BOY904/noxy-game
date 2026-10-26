@@ -4,6 +4,15 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/_Project/Scenes/MainLobby.unity
+    guid: a1a1b91c6181d354b91fd7d0ebf73fc4
+  - enabled: 1
+    path: Assets/_Project/Scenes/Training.unity
+    guid: 3e91cf0d000bd6b4a86861359f3f23d9
+  - enabled: 1
+    path: Assets/_Project/Scenes/BattleRoyale.unity
+    guid: dee801cef410b404d9663285b1a3346f
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0
