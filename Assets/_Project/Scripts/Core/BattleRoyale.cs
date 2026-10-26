@@ -463,6 +463,12 @@ namespace Noxy.Core
                 if (attempt != attemptId) return;
                 inFlight = false;
                 if (!active) return;
+                if (r == null)
+                {
+                    active = false;
+                    Emit(MatchmakingState.Failed, "The matchmaking service returned no response. Please retry.", 0f, MatchmakingError.ServerUnavailable);
+                    return;
+                }
                 Debug.Log($"[Noxy BR] state=requesting_matchmaking elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s http={r.Status} code={SafeCode(r.Code)}");
                 if (!r.Ok) { active = false; Emit(MatchmakingState.Failed, r.Friendly, 0f, r.Code == "no_server_available" || r.NetworkError ? MatchmakingError.ServerUnavailable : MatchmakingError.ModeUnavailable); return; }
                 Handle(r.Value);
@@ -491,6 +497,12 @@ namespace Noxy.Core
                 if (attempt != attemptId) return;
                 inFlight = false;
                 if (!active) return;
+                if (r == null)
+                {
+                    active = false;
+                    Emit(MatchmakingState.Failed, "The matchmaking service returned no response. Please retry.", 0f, MatchmakingError.ServerUnavailable);
+                    return;
+                }
                 if (!r.Ok)
                 {
                     Debug.LogWarning($"[Noxy BR] state=waiting_for_match elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s http={r.Status} code={SafeCode(r.Code)}");
@@ -510,10 +522,16 @@ namespace Noxy.Core
                 Emit(MatchmakingState.Failed, "The matchmaking service returned an empty match assignment. Please retry.", 0f, MatchmakingError.ServerUnavailable);
                 return;
             }
-            Debug.Log($"[Noxy BR] state=matchmaking_assignment elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s phase={s.status} players={s.waiting?.players ?? 0}/{s.waiting?.minPlayers ?? 0} assignment={(string.IsNullOrEmpty(s.server?.host) ? "missing" : "received")}");
+            Debug.Log($"[Noxy BR] state=matchmaking_assignment elapsed={Time.realtimeSinceStartup - attemptStartedAt:0.0}s phase={s.status} players={(s.waiting != null ? s.waiting.players : 0)}/{(s.waiting != null ? s.waiting.minPlayers : 0)} assignment={(string.IsNullOrEmpty(s.server?.host) ? "missing" : "received")}");
             switch (BattleRoyaleSession.ParsePhase(s.status))
             {
                 case BrPhase.Waiting:
+                    if (s.waiting == null)
+                    {
+                        active = false;
+                        Emit(MatchmakingState.Failed, "The match response is missing its player roster. Please retry.", 0f, MatchmakingError.ServerUnavailable);
+                        return;
+                    }
                     Emit(MatchmakingState.Searching, "Finding players " + s.waiting.players + "/" + s.waiting.minPlayers, 0.1f + 0.8f * Math.Min(1f, s.waiting.players / (float)Math.Max(1, s.waiting.minPlayers)));
                     break;
                 case BrPhase.Cancelled:
@@ -522,10 +540,22 @@ namespace Noxy.Core
                 case BrPhase.Ended:
                     active = false; Emit(MatchmakingState.Failed, "That match already ended.", 0f, MatchmakingError.ServerUnavailable);
                     break;
-                default:   // cabin or later: the roster is final and the server has started the match
+                case BrPhase.Cabin:
+                case BrPhase.Flight:
+                case BrPhase.Combat:
+                    if (s.server == null || string.IsNullOrEmpty(s.server.host) || s.server.port < 1 || s.server.port > 65535)
+                    {
+                        active = false;
+                        Emit(MatchmakingState.Failed, "The server started a match without a valid server assignment. Please return to the lobby and retry.", 0f, MatchmakingError.ServerUnavailable);
+                        return;
+                    }
                     active = false;
                     Emit(MatchmakingState.Succeeded, "Match found", 1f, MatchmakingError.None,
                         new MatchAssignment { ModeId = GameModeIds.BattleRoyale, SceneName = SceneName, ServerAddress = s.server.host, ServerPort = s.server.port, SessionToken = "" });
+                    break;
+                default:
+                    active = false;
+                    Emit(MatchmakingState.Failed, "The server returned an unknown match phase. Please retry or return to the lobby.", 0f, MatchmakingError.ServerUnavailable);
                     break;
             }
         }

@@ -135,27 +135,52 @@ namespace Noxy.Lobby
         {
             // 1. connect: config, map identity, and the match this player was placed in
             if (!svc.IsAvailable) { Fail(svc.UnavailableReason); yield break; }
+            float requestStartedAt = Now();
             var pc = new Pending<BrConfigDto>(); svc.LoadConfig(pc.Set);
             yield return Wait(pc);
             if (Aborted) yield break;
+            LogStartupRequest("connecting_lobby_backend", requestStartedAt, pc.Result);
             if (!pc.Result.Ok) { Fail("Couldn't reach the match server: " + pc.Result.Friendly); yield break; }
+            if (pc.Result.Value == null) { Fail("The match server returned an empty configuration. Please retry."); yield break; }
             cfg = pc.Result.Value; loading.Report(LoadStage.ConnectingServer, 0.4f, Now());
 
+            requestStartedAt = Now();
             var pm = new Pending<BrMapInfoDto>(); svc.LoadMapInfo(pm.Set);
             yield return Wait(pm);
             if (Aborted) yield break;
+            LogStartupRequest("loading_map_identity", requestStartedAt, pm.Result);
             if (!pm.Result.Ok) { Fail("Couldn't read the map version: " + pm.Result.Friendly); yield break; }
-            info = pm.Result.Value; loading.Report(LoadStage.ConnectingServer, 0.7f, Now());
+            info = pm.Result.Value;
+            if (info == null || string.IsNullOrEmpty(info.mapId) || string.IsNullOrEmpty(info.hash))
+            {
+                Fail("The match server returned incomplete map information. Check the server's Bermuda map configuration.");
+                yield break;
+            }
+            if (info.mapId != "bermuda")
+            {
+                Fail("This client cannot load map '" + info.mapId + "'. A compatible map build is required.");
+                yield break;
+            }
+            loading.Report(LoadStage.ConnectingServer, 0.7f, Now());
 
+            requestStartedAt = Now();
             var ps = new Pending<BrStateDto>(); svc.GetState(0, ps.Set);
             yield return Wait(ps);
             if (Aborted) yield break;
+            LogStartupRequest("validating_match_assignment", requestStartedAt, ps.Result);
             if (!ps.Result.Ok)
             {
                 Fail(ps.Result.Code == "not_in_match" || ps.Result.Code == "no_match" ? "You are not in a match. Go back to the lobby and press PLAY." : "Couldn't join the match: " + ps.Result.Friendly);
                 yield break;
             }
+            if (ps.Result.Value == null || ps.Result.Value.server == null ||
+                string.IsNullOrEmpty(ps.Result.Value.server.host) || ps.Result.Value.server.port < 1 || ps.Result.Value.server.port > 65535)
+            {
+                Fail("The match assignment has no valid game-server address. Return to the lobby and retry; if this continues, contact the server operator.");
+                yield break;
+            }
             session.Apply(ps.Result.Value, NowMs());
+            Debug.Log($"[Noxy BR] state=match_assignment_validated elapsed={Now() - requestStartedAt:0.0}s phase={ps.Result.Value.status} server={ps.Result.Value.server.host}:{ps.Result.Value.server.port}", this);
             loading.Complete(LoadStage.ConnectingServer, Now());
 
             // 2. roster: the lobby normally finishes this; a late start can still be waiting
@@ -186,11 +211,13 @@ namespace Noxy.Lobby
                 Fail("This build's Bermuda map (" + localHash + ") does not match the server's (" + info.hash + "). Update the game and try again.");
                 yield break;
             }
+            Debug.Log($"[Noxy BR] state=map_identity_verified map={info.mapId} hash={localHash}", this);
             loading.Report(LoadStage.LoadingMap, 0.2f, Now());
             builder = new IslandBuilder { VegetationDensity = Application.isMobilePlatform ? 0.5f : 1f };
             yield return StartCoroutine(builder.Build(layout, transform, p => loading.Report(LoadStage.LoadingMap, 0.2f + 0.8f * p, Now())));
             if (Aborted) yield break;
             loading.Complete(LoadStage.LoadingMap, Now());
+            Debug.Log($"[Noxy BR] state=map_loaded map={info.mapId}", this);
 
             // 4. characters
             plane = BrPlaneRig.Create(cfg.cabin);
@@ -201,6 +228,7 @@ namespace Noxy.Lobby
             yield return null;
             SyncRemotes(session.Last);
             loading.Complete(LoadStage.PreparingCharacters, Now());
+            Debug.Log("[Noxy BR] state=characters_prepared local_character=ready remote_roster=ready", this);
 
             // 5. start
             hud.BindMaps(layout, builder.ColorTexture);
@@ -209,8 +237,24 @@ namespace Noxy.Lobby
             loading.Complete(LoadStage.StartingMatch, Now());
             hud.HideLoading();
             ready = true;
+            Debug.Log("[Noxy BR] state=match_started", this);
             pollTimer = 99f;   // poll immediately
             HandleState();
+        }
+
+        private void LogStartupRequest<T>(string state, float startedAt, ApiResult<T> result) where T : class
+        {
+            if (result == null)
+            {
+                Debug.LogWarning($"[Noxy BR] state={state} elapsed={Now() - startedAt:0.0}s result=missing", this);
+                return;
+            }
+
+            string code = string.IsNullOrEmpty(result.Code) ? "none" : result.Code;
+            if (code.Length > 48) code = code.Substring(0, 48);
+            string message = $"[Noxy BR] state={state} elapsed={Now() - startedAt:0.0}s http={result.Status} code={code}";
+            if (result.Ok) Debug.Log(message, this);
+            else Debug.LogWarning(message, this);
         }
 
         private static string MapHash(IslandLayout l)

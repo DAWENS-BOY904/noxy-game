@@ -115,6 +115,7 @@ namespace Noxy.Tests
         public void LoadingFlagsSlowNetworksTimesOutAndSupportsCancel()
         {
             var p = new LoadingProgress(); p.Begin(0f);
+            Assert.AreEqual(LoadStage.ConnectingServer, p.Current, "the initial network operation is timed before progress is reported");
             p.Report(LoadStage.ConnectingServer, 0.2f, 1f);
             p.Tick(5f); Assert.IsFalse(p.Slow);
             p.Tick(12f); Assert.IsTrue(p.Slow); StringAssert.Contains("slow connection", p.Message);
