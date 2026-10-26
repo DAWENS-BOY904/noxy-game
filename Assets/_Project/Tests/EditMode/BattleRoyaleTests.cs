@@ -213,6 +213,9 @@ namespace Noxy.Tests
             public void SelectSlot(string s, Action<ApiResult<OkDto>> d) { }
             public void Heal(Action<ApiResult<OkDto>> d) { }
             public void PickupLoot(string id, Action<ApiResult<BrPickupDto>> d) { }
+            public void PickupCurrency(string id, Action<ApiResult<BrCurrencyPickupResultDto>> d) { }
+            public void OpenShop(string shopId, Action<ApiResult<BrShopOpenDto>> d) { }
+            public void BuyShopItem(string shopId, string weaponId, string requestId, Action<ApiResult<BrShopBuyDto>> d) { }
         }
         private static ApiResult<BrStateDto> Ok(string status, int players = 3)
         {

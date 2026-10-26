@@ -165,7 +165,7 @@ namespace Noxy.Lobby
                 }
             }
             foreach (var k in new List<string>(shopMarkers.Keys))
-                if (!keepShops.Contains(k)) { if (shopMarkers[k] != null) Object.Destroy(shopMarkers[k].gameObject); shopMarkers.Remove(k); }
+                if (!keepShops.Contains(k)) { if (shopMarkers[k] != null) UnityEngine.Object.Destroy(shopMarkers[k].gameObject); shopMarkers.Remove(k); }
 
             var keepCash = new HashSet<string>();
             if (currency != null)
@@ -185,7 +185,7 @@ namespace Noxy.Lobby
                 }
             }
             foreach (var k in new List<string>(currencyMarkers.Keys))
-                if (!keepCash.Contains(k)) { if (currencyMarkers[k] != null) Object.Destroy(currencyMarkers[k].gameObject); currencyMarkers.Remove(k); }
+                if (!keepCash.Contains(k)) { if (currencyMarkers[k] != null) UnityEngine.Object.Destroy(currencyMarkers[k].gameObject); currencyMarkers.Remove(k); }
         }
     }
 
