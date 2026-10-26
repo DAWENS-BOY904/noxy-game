@@ -136,6 +136,16 @@ namespace Noxy.Tests
             Assert.AreEqual("Server went away.", f.Message);
         }
 
+        [Test]
+        public void InitialConnectionTimesOutEvenBeforeProgressIsReported()
+        {
+            var p = new LoadingProgress();
+            p.Begin(0f);
+            p.Tick(LoadingProgress.StageTimeoutSeconds[(int)LoadStage.ConnectingServer] + 0.1f);
+            Assert.IsTrue(p.Failed);
+            Assert.AreEqual(LoadStage.ConnectingServer, p.FailedStage);
+        }
+
         // ------------------------------------------------------------ jump kinematics versus the server's validation
         private static bool Respects(BrConfigDto c, AirState before, AirState after, float dt, bool chute, float sinceDeploy, out string why)
         {
@@ -199,9 +209,15 @@ namespace Noxy.Tests
             public bool Available = true;
             public ApiResult<BrStateDto> QueueResult, StateResult;
             public int Leaves, Polls;
+            public bool DelayQueue;
+            public readonly List<Action<ApiResult<BrStateDto>>> PendingQueues = new List<Action<ApiResult<BrStateDto>>>();
             public bool IsAvailable => Available;
             public string UnavailableReason => "Sign in required.";
-            public void Queue(string m, Action<ApiResult<BrStateDto>> d) => d(QueueResult);
+            public void Queue(string m, Action<ApiResult<BrStateDto>> d)
+            {
+                if (DelayQueue) PendingQueues.Add(d);
+                else d(QueueResult);
+            }
             public void GetState(int s, Action<ApiResult<BrStateDto>> d) { Polls++; d(StateResult); }
             public void LeaveQueue(Action<ApiResult<OkDto>> d) { Leaves++; d(new ApiResult<OkDto> { Ok = true, Value = new OkDto() }); }
             public void LoadConfig(Action<ApiResult<BrConfigDto>> d) { }
@@ -259,6 +275,45 @@ namespace Noxy.Tests
             Assert.AreEqual(BattleRoyaleMatchmakingService.SceneName, done.Assignment.SceneName);
             Assert.AreEqual("gs.example.test", done.Assignment.ServerAddress);
             Assert.AreEqual(7777, done.Assignment.ServerPort);
+        }
+
+        [Test]
+        public void CancelledQueueCallbacksCannotCompleteANewerAttempt()
+        {
+            var fake = new FakeBr { DelayQueue = true, QueueResult = Ok("waiting") };
+            var mm = new BattleRoyaleMatchmakingService(fake);
+            MatchmakingStatus last = null;
+            mm.StatusChanged += s => last = s;
+            mm.Begin(BrMode(), new MatchmakingRequest());
+            var cancelledAttempt = fake.PendingQueues[0];
+            mm.Cancel();
+
+            fake.DelayQueue = false;
+            fake.QueueResult = Ok("waiting", 4);
+            mm.Begin(BrMode(), new MatchmakingRequest());
+            cancelledAttempt(Ok("cabin"));
+
+            Assert.AreEqual(MatchmakingState.Searching, last.State);
+            Assert.IsTrue(mm.IsBusy);
+            Assert.IsNull(last.Assignment);
+        }
+
+        [Test]
+        public void MatchmakingRejectsUnknownPhasesAndMissingServerAssignments()
+        {
+            var fake = new FakeBr { QueueResult = Ok("unknown") };
+            var mm = new BattleRoyaleMatchmakingService(fake);
+            MatchmakingStatus last = null;
+            mm.StatusChanged += s => last = s;
+            mm.Begin(BrMode(), new MatchmakingRequest());
+            Assert.AreEqual(MatchmakingState.Failed, last.State);
+            StringAssert.Contains("unknown match phase", last.Message);
+
+            fake.QueueResult = Ok("cabin");
+            fake.QueueResult.Value.server = new BrServerDto { host = "", port = 0 };
+            mm.Begin(BrMode(), new MatchmakingRequest());
+            Assert.AreEqual(MatchmakingState.Failed, last.State);
+            StringAssert.Contains("valid server assignment", last.Message);
         }
 
         [Test]
