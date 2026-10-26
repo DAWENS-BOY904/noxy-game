@@ -84,7 +84,7 @@ namespace Noxy.Lobby
         }
     }
 
-    /// <summary>Procedural stand-in character (primitives + code-driven idle animation).</summary>
+    /// <summary>Original Noxy Pathfinder lobby character, built from primitives with a code-driven idle animation.</summary>
     public sealed class PlaceholderCharacterView : MonoBehaviour, ICharacterView
     {
         private static readonly Color Skin = new Color(0.86f, 0.66f, 0.52f);
@@ -92,6 +92,7 @@ namespace Noxy.Lobby
 
         private Transform model, pelvis, torso, head, shoulderL, shoulderR, elbowL, elbowR, hipL, hipR, kneeL, kneeR;
         private Material bodyMat, trimMat, legMat, shoeMat, shoeTrimMat;
+        private Material kitMat, signalMat;
         private GameObject maskObj, headgearObj, packObj;
         private float torsoBaseScaleY;
         private float pelvisBaseY;
@@ -115,6 +116,8 @@ namespace Noxy.Lobby
             legMat = MaterialFactory.Lit(Color.gray, 0.05f, 0.3f);
             shoeMat = MaterialFactory.Lit(Color.gray, 0.1f, 0.4f);
             shoeTrimMat = MaterialFactory.Lit(Color.white, 0.1f, 0.5f);
+            kitMat = MaterialFactory.Lit(new Color(0.08f, 0.13f, 0.17f), 0.25f, 0.45f);
+            signalMat = MaterialFactory.Unlit(new Color(0.12f, 0.92f, 0.78f));
 
             pelvis = new GameObject("Pelvis").transform;
             pelvis.SetParent(model, false);
@@ -140,8 +143,29 @@ namespace Noxy.Lobby
             BuildArm(1f, skin, out shoulderR, out elbowR);
             BuildLeg(-1f, skin, out hipL, out kneeL);
             BuildLeg(1f, skin, out hipR, out kneeR);
+            BuildPathfinderDetails();
 
             Apply(DefaultCosmeticCatalog.StartingLoadout(), new DefaultCosmeticCatalog());
+        }
+
+        private void BuildPathfinderDetails()
+        {
+            MaterialFactory.Primitive(PrimitiveType.Cube, "ChestRig", pelvis, new Vector3(0f, 0.34f, 0.145f), new Vector3(0.29f, 0.2f, 0.075f), kitMat);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "ChestSignal", pelvis, new Vector3(0f, 0.34f, 0.186f), new Vector3(0.055f, 0.12f, 0.012f), signalMat);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "ChestPocketL", pelvis, new Vector3(-0.095f, 0.24f, 0.17f), new Vector3(0.075f, 0.07f, 0.035f), trimMat);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "ChestPocketR", pelvis, new Vector3(0.095f, 0.24f, 0.17f), new Vector3(0.075f, 0.07f, 0.035f), trimMat);
+
+            MaterialFactory.Primitive(PrimitiveType.Cube, "ShoulderPlateL", shoulderL, new Vector3(-0.015f, 0.055f, 0.025f), new Vector3(0.18f, 0.07f, 0.18f), kitMat);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "ShoulderMarkL", shoulderL, new Vector3(-0.015f, 0.094f, 0.03f), new Vector3(0.11f, 0.018f, 0.11f), signalMat);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "ShoulderPlateR", shoulderR, new Vector3(0.015f, 0.055f, 0.025f), new Vector3(0.18f, 0.07f, 0.18f), kitMat);
+
+            MaterialFactory.Primitive(PrimitiveType.Cube, "UtilityPouch", pelvis, new Vector3(0.23f, 0.03f, 0.04f), new Vector3(0.11f, 0.15f, 0.12f), kitMat);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "PouchLatch", pelvis, new Vector3(0.23f, 0.07f, 0.105f), new Vector3(0.045f, 0.035f, 0.015f), signalMat);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "KneePadL", hipL, new Vector3(0f, -0.42f, 0.09f), new Vector3(0.18f, 0.11f, 0.055f), kitMat);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "KneePadR", hipR, new Vector3(0f, -0.42f, 0.09f), new Vector3(0.18f, 0.11f, 0.055f), kitMat);
+
+            MaterialFactory.Primitive(PrimitiveType.Sphere, "CommsEarpiece", head, new Vector3(-0.135f, 0.08f, 0f), new Vector3(0.07f, 0.11f, 0.1f), kitMat);
+            MaterialFactory.Primitive(PrimitiveType.Cube, "CommsIndicator", head, new Vector3(-0.16f, 0.08f, 0.045f), new Vector3(0.018f, 0.035f, 0.025f), signalMat);
         }
 
         private void BuildArm(float side, Material skin, out Transform shoulder, out Transform elbow)
