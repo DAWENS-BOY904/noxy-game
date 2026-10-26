@@ -157,7 +157,7 @@ namespace Noxy.Lobby
             {
                 loadingScene = false;
                 AppServices.Matchmaking.Fail(MatchmakingError.SceneLoadFailed, $"Unity could not begin loading scene '{assignment.SceneName}'.");
-                return;
+                yield break;
             }
             while (op != null && !op.isDone)
             {
